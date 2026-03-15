@@ -553,8 +553,7 @@ elif page == ":material/play_circle: Run Benchmark":
     st.title("Run Benchmark")
 
     st.info(
-        "This will run all chunking strategies against your questions. "
-        "It may take several minutes depending on the number of questions.",
+        "Select which chunking strategies to evaluate, then start the run.",
         icon=":material/info:",
     )
 
@@ -581,15 +580,35 @@ elif page == ":material/play_circle: Run Benchmark":
             icon=":material/warning:",
         )
 
+    # ── Strategy selector ─────────────────────────────────────────────────────
+    STRATEGY_OPTIONS = {
+        "C": "Sliding window — 512 tokens, overlap 128",
+        "D": "Sliding window — 512 tokens, overlap 256",
+        "E": "Structure-aware — 512 tokens",
+        "F": "Semantic — threshold 0.75, max 512 tokens",
+    }
+    st.markdown("### Chunking strategies to run")
+    st.caption("Select at least one. Running fewer strategies is faster.")
+    sel_cols = st.columns(len(STRATEGY_OPTIONS))
+    selected_strategies = []
+    for col, (sid, label) in zip(sel_cols, STRATEGY_OPTIONS.items()):
+        with col:
+            if st.checkbox(f"**{sid}**  \n{label}", value=True, key=f"strat_{sid}"):
+                selected_strategies.append(sid)
+
+    if not selected_strategies:
+        st.warning("Select at least one strategy to run.", icon=":material/warning:")
+
+    st.divider()
     st.markdown(f"**{len(docs)} document(s) ready:** {', '.join(docs)}")
-    st.markdown(f"**{len(st.session_state.questions)} active question(s)** will be evaluated.")
+    st.markdown(f"**{len(st.session_state.questions)} active question(s)** · **{len(selected_strategies)} strategy/ies** selected")
     st.divider()
 
     run_btn = st.button(
         "Start benchmark",
         icon=":material/play_arrow:",
         type="primary",
-        disabled=st.session_state.benchmark_running,
+        disabled=st.session_state.benchmark_running or not selected_strategies,
     )
 
     if run_btn:
@@ -597,8 +616,9 @@ elif page == ":material/play_circle: Run Benchmark":
         st.session_state.benchmark_log = ""
 
         def _run():
+            cmd = [sys.executable, "run_benchmark.py", "--strategies"] + selected_strategies
             proc = subprocess.Popen(
-                [sys.executable, "run_benchmark.py"],
+                cmd,
                 cwd=str(HERE),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

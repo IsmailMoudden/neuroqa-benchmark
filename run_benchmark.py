@@ -193,7 +193,9 @@ def generate_answer(
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def run_benchmark():
+def run_benchmark(strategies: List[Dict] = None):
+    if strategies is None:
+        strategies = STRATEGIES
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY not set. Add it to .env")
@@ -209,7 +211,7 @@ def run_benchmark():
     all_results: List[Dict] = []
     strategy_chunk_stats: Dict[str, Dict] = {}
 
-    for strategy in STRATEGIES:
+    for strategy in strategies:
         print(f"\n{'='*60}")
         print(f"Strategy {strategy['id']}: {strategy['name']}")
         print(f"{'='*60}")
@@ -289,7 +291,7 @@ def run_benchmark():
     # ── Aggregate per strategy ────────────────────────────────────────────────
     summary = []
     costs = []
-    for strategy in STRATEGIES:
+    for strategy in strategies:
         sid = strategy["id"]
         rows = [r for r in all_results if r["strategy_id"] == sid]
         if not rows:
@@ -336,7 +338,7 @@ def run_benchmark():
     print("\n" + "="*95)
     print(f"{'Strat':<6} {'N_chunks':>8} {'AvgTok':>7} {'R@5':>6} {'MRR':>6} {'F1':>6} {'Faith':>7} {'Rel':>6} {'Cost':>8} {'Composite':>10}")
     print("-"*95)
-    for s in summary:
+    for s in summary:  # already filtered to selected strategies
         marker = "  ◀ WINNER" if s["strategy_id"] == best_sid else ""
         print(
             f"{s['strategy_id']:<6} {s['n_chunks']:>8} {s['avg_tokens']:>7.1f} "
@@ -403,4 +405,19 @@ def export_excel(all_results: List[Dict], summary: List[Dict], path: Path):
 
 
 if __name__ == "__main__":
-    run_benchmark()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--strategies", nargs="+", default=None,
+        help="Strategy IDs to run, e.g. --strategies C E. Defaults to all.",
+    )
+    args = parser.parse_args()
+    if args.strategies:
+        valid_ids = {s["id"] for s in STRATEGIES}
+        unknown = set(args.strategies) - valid_ids
+        if unknown:
+            raise ValueError(f"Unknown strategy IDs: {unknown}. Valid: {valid_ids}")
+        active_strategies = [s for s in STRATEGIES if s["id"] in args.strategies]
+        run_benchmark(strategies=active_strategies)
+    else:
+        run_benchmark()
