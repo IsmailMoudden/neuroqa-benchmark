@@ -10,6 +10,7 @@ import time
 import random
 from pathlib import Path
 from typing import List, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 from openai import OpenAI
@@ -229,23 +230,30 @@ def run_benchmark():
         print("Embedding chunks...")
         chunk_embeddings = embed_chunks(chunks, embed_model)
 
-        for q in QA_DATASET:
+        def _eval_question(q):
             print(f"  [{q['id']}] {q['question'][:65]}...")
-
             retrieved = retrieve_top_k(q["question"], chunks, chunk_embeddings, embed_model, k=TOP_K)
-            answer, tok_in, tok_out = generate_answer(client, q["question"], retrieved)
-
-            rec5 = recall_at_k(chunks, retrieved, q, k=TOP_K)
-            mrr_val = mrr(retrieved, q)
-            f1 = token_f1(answer, q["expected"])
-
             context_text = "\n\n".join(c["text"] for c in retrieved)
-            faith = faithfulness_score(client, context_text, answer)
-            rel = relevance_score(client, q["question"], answer)
 
-            cost = compute_cost(tok_in, tok_out)
+            # Run answer + faithfulness + relevance in parallel
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                f_answer = ex.submit(generate_answer, client, q["question"], retrieved)
+                # faithfulness and relevance need the answer first — fire after
+            answer, tok_in, tok_out = f_answer.result()
 
-            result = {
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                f_faith = ex.submit(faithfulness_score, client, context_text, answer)
+                f_rel   = ex.submit(relevance_score,   client, q["question"], answer)
+                faith = f_faith.result()
+                rel   = f_rel.result()
+
+            rec5    = recall_at_k(chunks, retrieved, q, k=TOP_K)
+            mrr_val = mrr(retrieved, q)
+            f1      = token_f1(answer, q.get("expected", ""))
+            cost    = compute_cost(tok_in, tok_out)
+
+            print(f"    R@5={rec5:.2f} MRR={mrr_val:.2f} F1={f1:.2f} Faith={faith:.2f} Rel={rel:.2f} Cost=${cost:.4f}")
+            return {
                 "strategy_id": strategy["id"],
                 "strategy_name": strategy["name"],
                 "q_id": q["id"],
@@ -254,7 +262,7 @@ def run_benchmark():
                 "difficulty": q["difficulty"],
                 "source_doc": q["source_doc"],
                 "answer": answer,
-                "expected": q["expected"],
+                "expected": q.get("expected", ""),
                 "retrieved_chunks": [c["chunk_id"] for c in retrieved],
                 "recall_at_5": rec5,
                 "mrr": mrr_val,
@@ -265,9 +273,12 @@ def run_benchmark():
                 "tokens_output": tok_out,
                 "cost_usd": cost,
             }
-            all_results.append(result)
 
-            print(f"    R@5={rec5:.2f} MRR={mrr_val:.2f} F1={f1:.2f} Faith={faith:.2f} Rel={rel:.2f} Cost=${cost:.4f}")
+        # Evaluate all questions for this strategy in parallel
+        with ThreadPoolExecutor(max_workers=min(4, len(QA_DATASET))) as ex:
+            futures = {ex.submit(_eval_question, q): q for q in QA_DATASET}
+            for future in as_completed(futures):
+                all_results.append(future.result())
 
     # ── Save raw results ──────────────────────────────────────────────────────
     raw_path = RESULTS_DIR / "raw_results.json"
