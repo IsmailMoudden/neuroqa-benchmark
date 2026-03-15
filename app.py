@@ -24,12 +24,153 @@ QA_PATH = HERE / "qa_dataset.py"
 SOURCES_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
 
-# ─── Page config ──────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="NeuroQA Benchmark",
-    page_icon=":material/troubleshoot:",
-    layout="wide",
-)
+# ─── Sample question library (proposals — not active by default) ──────────────
+SAMPLE_QUESTIONS = [
+    {
+        "id": "Q01",
+        "type": "factual",
+        "difficulty": "easy",
+        "source_doc": "CLS_specification_.docx",
+        "question": "What does CLS stand for and what is its role in FX settlement?",
+        "expected": "CLS stands for Continuous Linked Settlement. It is a settlement method where CLS Bank, a central financial institution, settles FX trades using a payment-versus-payment principle.",
+        "keywords": ["CLS", "Continuous Linked Settlement", "settlement method", "payment-versus-payment"],
+    },
+    {
+        "id": "Q02",
+        "type": "factual",
+        "difficulty": "easy",
+        "source_doc": "CLS_specification_.docx",
+        "question": "What risk does CLS settlement eliminate?",
+        "expected": "CLS eliminates the Herstatt Risk — the risk that one party delivers currency but does not receive the counter-currency due to timing differences between settlement systems.",
+        "keywords": ["Herstatt Risk", "settlement risk", "payment-versus-payment", "timing"],
+    },
+    {
+        "id": "Q03",
+        "type": "factual",
+        "difficulty": "medium",
+        "source_doc": "CLS_specification_.docx",
+        "question": "What are the five main phases of the CLS process in MX?",
+        "expected": "The five phases are: CLS Trade Capture, Trade Validation, CLS Confirmation, CLS Matching, and CLS Settlement.",
+        "keywords": ["trade capture", "validation", "confirmation", "matching", "settlement", "phases"],
+    },
+    {
+        "id": "Q04",
+        "type": "factual",
+        "difficulty": "easy",
+        "source_doc": "CLS_specification_.docx",
+        "question": "Which NT branch is the main CLS settling branch?",
+        "expected": "TNTC London is the main NT CLS branch that settles with CLS.",
+        "keywords": ["TNTC London", "branch", "settling", "NT"],
+    },
+    {
+        "id": "Q05",
+        "type": "factual",
+        "difficulty": "medium",
+        "source_doc": "CLS_specification_.docx",
+        "question": "What types of counterparts does NT settle with through CLS?",
+        "expected": "NT settles with interbank external counterparts (direct CLS members and third-party members) and 3rd-party Custody clients who submit to CLS via NT.",
+        "keywords": ["counterparts", "interbank", "third-party", "custody clients", "direct members"],
+    },
+    {
+        "id": "Q06",
+        "type": "definition",
+        "difficulty": "medium",
+        "source_doc": "CLS_specification_.docx",
+        "question": "What is the difference between a direct CLS member and a third-party CLS member?",
+        "expected": "A direct CLS member settles directly with CLS Bank. A third-party member does not have direct access and must submit trades through a direct member such as NT.",
+        "keywords": ["direct member", "third-party member", "CLS Bank", "access"],
+    },
+    {
+        "id": "Q07",
+        "type": "definition",
+        "difficulty": "medium",
+        "source_doc": "CLS_specification_.docx",
+        "question": "What is a Nostro account in the CLS context?",
+        "expected": "A Nostro account is a bank account held at another bank, denominated in foreign currency. TNTC London's main Nostro is used for CLS settlement across different currencies.",
+        "keywords": ["Nostro", "foreign currency", "TNTC London", "account"],
+    },
+    {
+        "id": "Q08",
+        "type": "definition",
+        "difficulty": "hard",
+        "source_doc": "Banque_2_CLS_-_Trade_and_Settlement_Business_Process.docx",
+        "question": "What is a Vostro account and how does it relate to CLS?",
+        "expected": "A Vostro account is another bank's account held at NT. CLS Standard Settlement Instructions include both Nostro and Vostro accounts for settlement routing.",
+        "keywords": ["Vostro", "SSI", "Standard Settlement Instructions", "Nostro", "routing"],
+    },
+    {
+        "id": "Q09",
+        "type": "procedural",
+        "difficulty": "medium",
+        "source_doc": "CLS_specification_.docx",
+        "question": "Describe the CLS Trade Capture process step by step.",
+        "expected": "The system automatically detects CLS eligibility based on static data (CLS agreement at counterparty level, counterpart, and currency). No manual input from the trader is required. Static Data users manage the eligibility conditions.",
+        "keywords": ["trade capture", "CLS eligibility", "static data", "automatic", "counterparty"],
+    },
+    {
+        "id": "Q10",
+        "type": "procedural",
+        "difficulty": "medium",
+        "source_doc": "Banque_2_CLS_-_Trade_and_Settlement_Business_Process.docx",
+        "question": "What checks are performed during Trade Validation in the CLS process?",
+        "expected": "Two types: economic checks and non-economic checks. These are predefined checks detecting exceptions to the standard process, managed by NT Static Data Users.",
+        "keywords": ["economic checks", "non-economic checks", "validation", "exceptions", "static data"],
+    },
+    {
+        "id": "Q11",
+        "type": "procedural",
+        "difficulty": "hard",
+        "source_doc": "Banque_2_CLS_-_Trade_and_Settlement_Business_Process.docx",
+        "question": "What is the sweeping procedure in CLS settlement?",
+        "expected": "A workflow aggregating and netting cash flows across CLS-eligible trades. Includes initiation, first-level instruction checks, payment advice, second-level remaining checks, and instruction release. Handles direct debit and non-direct debit scenarios.",
+        "keywords": ["sweeping", "netting", "cash flows", "direct debit", "instruction"],
+    },
+    {
+        "id": "Q12",
+        "type": "procedural",
+        "difficulty": "hard",
+        "source_doc": "CLS_specification_.docx",
+        "question": "What SWIFT message types are used in CLS settlement?",
+        "expected": "CLS settlement generates MT202 and MT210 SWIFT messages from transfer strategy cash flows. FXTR messages are exchanged with CLS for confirmation.",
+        "keywords": ["MT202", "MT210", "FXTR", "SWIFT", "messages"],
+    },
+    {
+        "id": "Q13",
+        "type": "multi_hop",
+        "difficulty": "hard",
+        "source_doc": "CLS_specification_.docx",
+        "question": "If a trade is not CLS-eligible, what happens to its cash flows and how does this differ from a CLS-settled trade?",
+        "expected": "Non-eligible trade cash flows follow the standard settlement workflow. CLS-eligible cash flows are excluded from the standard workflow and processed through transfer strategies generating MT202/MT210 messages via CLS PvP mechanism.",
+        "keywords": ["cash flows", "standard workflow", "CLS eligible", "transfer strategy", "MT202"],
+    },
+    {
+        "id": "Q14",
+        "type": "multi_hop",
+        "difficulty": "hard",
+        "source_doc": "Banque_2_CLS_-_Trade_and_Settlement_Business_Process.docx",
+        "question": "What configuration must be in place before a CLS trade can be captured, and who manages it?",
+        "expected": "Required: CLS eligibility conditions, CLS provider, SSIs including Nostro and Vostro CLS and CLS-SWEEP. CLS agreements at counterparty level. Managed by Static Data Users.",
+        "keywords": ["static data", "CLS agreement", "prerequisites", "configuration", "SSI"],
+    },
+    {
+        "id": "Q15",
+        "type": "multi_hop",
+        "difficulty": "hard",
+        "source_doc": "Banque_2_CLS_-_Trade_and_Settlement_Business_Process.docx",
+        "question": "What happens when a new contributing flow is inserted after sweeping has already been performed?",
+        "expected": "Two options: cancel and replace the early sweeping with one new sweeped flow, or create an additional sweeping resulting in two separate sweeped flows.",
+        "keywords": ["late sweeping", "cancel replace", "additional sweeping", "contributing flow"],
+    },
+    {
+        "id": "Q16",
+        "type": "causal",
+        "difficulty": "hard",
+        "source_doc": "CLS_specification_.docx",
+        "question": "Why does the CLS payment-versus-payment model reduce settlement risk compared to traditional FX settlement?",
+        "expected": "In traditional FX settlement one leg is delivered before the other, creating Herstatt Risk exposure. CLS PvP ensures both currency legs settle simultaneously and are only finalised if both are delivered, eliminating this exposure.",
+        "keywords": ["payment-versus-payment", "Herstatt Risk", "simultaneous", "default", "exposure"],
+    },
+]
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +181,7 @@ def list_source_docs() -> list[str]:
 def load_questions() -> list[dict]:
     ns = {}
     exec(QA_PATH.read_text(encoding="utf-8"), ns)
-    return copy.deepcopy(ns["QA_DATASET"])
+    return copy.deepcopy(ns.get("QA_DATASET", []))
 
 
 def save_questions(questions: list[dict]):
@@ -104,6 +245,7 @@ METRIC_INFO = {
 }
 
 DIFFICULTY_BADGE = {"easy": "Low", "medium": "Medium", "hard": "High"}
+DIFFICULTY_COLOR = {"easy": "green", "medium": "orange", "hard": "red"}
 TYPE_LABELS = {
     "factual": "Factual",
     "definition": "Definition",
@@ -121,9 +263,13 @@ if "benchmark_log" not in st.session_state:
     st.session_state.benchmark_log = ""
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR — navigation
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="NeuroQA Benchmark",
+    page_icon=":material/troubleshoot:",
+    layout="wide",
+)
+
 st.sidebar.title("NeuroQA Benchmark")
 page = st.sidebar.radio(
     "Navigate",
@@ -136,6 +282,8 @@ page = st.sidebar.radio(
     label_visibility="collapsed",
 )
 st.sidebar.divider()
+active_count = len(st.session_state.questions)
+st.sidebar.caption(f"{active_count} active question{'s' if active_count != 1 else ''}")
 st.sidebar.caption("Chunking strategy evaluation interface.")
 
 
@@ -149,7 +297,6 @@ if page == ":material/folder: Documents":
         "They will be stored in the `sources/` folder and made available for benchmarking."
     )
 
-    # ── Upload ────────────────────────────────────────────────────────────────
     uploaded = st.file_uploader(
         "Upload one or more Word documents",
         type=["docx"],
@@ -172,7 +319,6 @@ if page == ":material/folder: Documents":
 
     st.divider()
 
-    # ── Document list ─────────────────────────────────────────────────────────
     docs = list_source_docs()
     st.markdown(f"### Documents in sources/ &nbsp; `{len(docs)} file{'s' if len(docs) != 1 else ''}`")
 
@@ -190,7 +336,6 @@ if page == ":material/folder: Documents":
             with col_del:
                 if st.button("Remove", key=f"del_doc_{doc}", icon=":material/delete:"):
                     to_delete_doc = doc
-
         if to_delete_doc:
             (SOURCES_DIR / to_delete_doc).unlink()
             st.success(f"Removed {to_delete_doc}")
@@ -201,119 +346,204 @@ if page == ":material/folder: Documents":
 # PAGE 1 — Questions
 # ══════════════════════════════════════════════════════════════════════════════
 elif page == ":material/list_alt: Questions":
-    st.title("Question Bank")
-    st.caption(f"{len(st.session_state.questions)} questions · Expected answers are optional")
+    st.title("Questions")
 
     available_docs = list_source_docs()
+    active_ids = {q["id"] for q in st.session_state.questions}
 
-    col_add, col_reload, col_save, _ = st.columns([1, 1, 1, 4])
-    with col_add:
-        if st.button("Add question", icon=":material/add:", use_container_width=True):
-            new_id = f"Q{len(st.session_state.questions)+1:02d}"
-            st.session_state.questions.append({
-                "id": new_id,
-                "type": "factual",
-                "difficulty": "medium",
-                "source_doc": available_docs[0] if available_docs else "",
-                "question": "",
-                "expected": "",
-                "keywords": [],
-            })
-    with col_reload:
-        if st.button("Reload from file", icon=":material/refresh:", use_container_width=True):
-            st.session_state.questions = load_questions()
-            st.success("Reloaded from qa_dataset.py")
-    with col_save:
-        if st.button("Save to file", icon=":material/save:", use_container_width=True, type="primary"):
+    # ── Tab layout: Active | Sample Library ───────────────────────────────────
+    tab_active, tab_library = st.tabs(
+        [f"Active questions ({len(st.session_state.questions)})", "Sample library"]
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # TAB 1 — Active questions
+    # ─────────────────────────────────────────────────────────────────────────
+    with tab_active:
+        col_add, col_reload, col_save, _ = st.columns([1, 1, 1, 4])
+        with col_add:
+            if st.button("Add blank question", icon=":material/add:", use_container_width=True):
+                new_id = f"Q{len(st.session_state.questions)+1:02d}"
+                st.session_state.questions.append({
+                    "id": new_id,
+                    "type": "factual",
+                    "difficulty": "medium",
+                    "source_doc": available_docs[0] if available_docs else "",
+                    "question": "",
+                    "expected": "",
+                    "keywords": [],
+                })
+        with col_reload:
+            if st.button("Reload from file", icon=":material/refresh:", use_container_width=True):
+                st.session_state.questions = load_questions()
+                st.success("Reloaded from qa_dataset.py")
+        with col_save:
+            if st.button("Save to file", icon=":material/save:", use_container_width=True, type="primary"):
+                save_questions(st.session_state.questions)
+                st.success("Saved to qa_dataset.py")
+
+        if not available_docs:
+            st.warning(
+                "No source documents found. Go to the Documents page to upload your .docx files first.",
+                icon=":material/warning:",
+            )
+
+        st.divider()
+
+        if not st.session_state.questions:
+            st.info(
+                "No active questions yet. "
+                "Add your own with the button above, or pick from the **Sample library** tab.",
+                icon=":material/info:",
+            )
+
+        to_delete = None
+        for i, q in enumerate(st.session_state.questions):
+            diff = q.get("difficulty", "medium")
+            diff_label = DIFFICULTY_BADGE[diff]
+            label = f"**{q['id']}** — {q['question'][:80] or '(empty question)'}  `{diff_label}`"
+            with st.expander(label, expanded=False):
+                c1, c2, c3 = st.columns([2, 2, 2])
+                with c1:
+                    q["id"] = st.text_input("ID", value=q["id"], key=f"id_{i}")
+                with c2:
+                    q["type"] = st.selectbox(
+                        "Question type",
+                        options=list(TYPE_LABELS.keys()),
+                        index=list(TYPE_LABELS.keys()).index(q.get("type", "factual")),
+                        format_func=lambda x: TYPE_LABELS[x],
+                        key=f"type_{i}",
+                        help="Factual: simple fact lookup. Definition: explain a term. "
+                             "Procedural: step-by-step process. Multi-hop: requires combining several passages. "
+                             "Causal: why/how something happens.",
+                    )
+                with c3:
+                    q["difficulty"] = st.selectbox(
+                        "Difficulty",
+                        options=["easy", "medium", "hard"],
+                        index=["easy", "medium", "hard"].index(q.get("difficulty", "medium")),
+                        format_func=lambda x: DIFFICULTY_BADGE[x],
+                        key=f"diff_{i}",
+                    )
+
+                current_doc = q.get("source_doc", "")
+                doc_options = available_docs if available_docs else ([current_doc] if current_doc else [])
+                if doc_options:
+                    idx = doc_options.index(current_doc) if current_doc in doc_options else 0
+                    q["source_doc"] = st.selectbox(
+                        "Source document",
+                        options=doc_options,
+                        index=idx,
+                        key=f"src_{i}",
+                        help="The document this question refers to.",
+                    )
+                else:
+                    st.caption("No documents available — upload files in the Documents page.")
+                    q["source_doc"] = current_doc
+
+                q["question"] = st.text_area(
+                    "Question", value=q["question"], height=80, key=f"q_{i}"
+                )
+                q["expected"] = st.text_area(
+                    "Expected answer",
+                    value=q.get("expected", ""),
+                    height=100,
+                    key=f"exp_{i}",
+                    placeholder="(optional) — leave blank if you do not have a reference answer. "
+                                "F1 Score will not be computed for this question.",
+                )
+                kw_str = ", ".join(q.get("keywords", []))
+                new_kw = st.text_input(
+                    "Keywords",
+                    value=kw_str,
+                    key=f"kw_{i}",
+                    placeholder="comma-separated, e.g. CLS, settlement, payment",
+                    help="Words that should appear in a relevant passage. "
+                         "Used to evaluate whether the right chunks were retrieved.",
+                )
+                q["keywords"] = [k.strip() for k in new_kw.split(",") if k.strip()]
+
+                if st.button("Remove from benchmark", icon=":material/delete:", key=f"del_{i}"):
+                    to_delete = i
+
+        if to_delete is not None:
+            st.session_state.questions.pop(to_delete)
             save_questions(st.session_state.questions)
-            st.success("Saved to qa_dataset.py")
+            st.rerun()
 
-    if not available_docs:
-        st.warning(
-            "No source documents found. Go to the Documents page to upload your .docx files first.",
-            icon=":material/warning:",
+        if st.session_state.questions:
+            st.divider()
+            if st.button("Save all changes", icon=":material/save:", type="primary", use_container_width=True):
+                save_questions(st.session_state.questions)
+                st.success("All changes saved to qa_dataset.py")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # TAB 2 — Sample library
+    # ─────────────────────────────────────────────────────────────────────────
+    with tab_library:
+        st.caption(
+            "These are example questions based on CLS settlement documentation. "
+            "Enable the ones you want to include in your benchmark."
         )
 
-    st.divider()
-
-    to_delete = None
-    for i, q in enumerate(st.session_state.questions):
-        diff_label = DIFFICULTY_BADGE.get(q.get("difficulty", "medium"), "Medium")
-        label = f"**{q['id']}** — {q['question'][:80] or '(empty question)'}  `{diff_label}`"
-        with st.expander(label, expanded=False):
-            c1, c2, c3 = st.columns([2, 2, 2])
-            with c1:
-                q["id"] = st.text_input("ID", value=q["id"], key=f"id_{i}")
-            with c2:
-                q["type"] = st.selectbox(
-                    "Question type",
-                    options=list(TYPE_LABELS.keys()),
-                    index=list(TYPE_LABELS.keys()).index(q.get("type", "factual")),
-                    format_func=lambda x: TYPE_LABELS[x],
-                    key=f"type_{i}",
-                    help="Factual: simple fact lookup. Definition: explain a term. "
-                         "Procedural: step-by-step process. Multi-hop: requires combining several passages. "
-                         "Causal: why/how something happens.",
-                )
-            with c3:
-                q["difficulty"] = st.selectbox(
-                    "Difficulty",
-                    options=["easy", "medium", "hard"],
-                    index=["easy", "medium", "hard"].index(q.get("difficulty", "medium")),
-                    format_func=lambda x: DIFFICULTY_BADGE[x],
-                    key=f"diff_{i}",
-                )
-
-            # Source doc — dropdown from uploaded files
-            current_doc = q.get("source_doc", "")
-            doc_options = available_docs if available_docs else [current_doc] if current_doc else []
-            if doc_options:
-                idx = doc_options.index(current_doc) if current_doc in doc_options else 0
-                q["source_doc"] = st.selectbox(
-                    "Source document",
-                    options=doc_options,
-                    index=idx,
-                    key=f"src_{i}",
-                    help="The document this question refers to. "
-                         "Only documents uploaded in the Documents page appear here.",
-                )
-            else:
-                st.caption("No documents available — upload files in the Documents page.")
-                q["source_doc"] = current_doc
-
-            q["question"] = st.text_area(
-                "Question", value=q["question"], height=80, key=f"q_{i}"
+        # Filter controls
+        fc1, fc2, _ = st.columns([2, 2, 4])
+        with fc1:
+            filter_type = st.selectbox(
+                "Filter by type",
+                options=["All"] + list(TYPE_LABELS.keys()),
+                format_func=lambda x: "All types" if x == "All" else TYPE_LABELS[x],
+                key="lib_filter_type",
             )
-            q["expected"] = st.text_area(
-                "Expected answer",
-                value=q.get("expected", ""),
-                height=100,
-                key=f"exp_{i}",
-                placeholder="(optional) — leave blank if you do not have a reference answer. "
-                            "F1 Score will not be computed for this question.",
+        with fc2:
+            filter_diff = st.selectbox(
+                "Filter by difficulty",
+                options=["All", "easy", "medium", "hard"],
+                format_func=lambda x: "All difficulties" if x == "All" else DIFFICULTY_BADGE[x],
+                key="lib_filter_diff",
             )
-            kw_str = ", ".join(q.get("keywords", []))
-            new_kw = st.text_input(
-                "Keywords",
-                value=kw_str,
-                key=f"kw_{i}",
-                placeholder="comma-separated, e.g. CLS, settlement, payment",
-                help="Words that should appear in a relevant passage. "
-                     "Used to evaluate whether the right chunks were retrieved.",
-            )
-            q["keywords"] = [k.strip() for k in new_kw.split(",") if k.strip()]
 
-            if st.button("Delete this question", icon=":material/delete:", key=f"del_{i}"):
-                to_delete = i
+        filtered = [
+            q for q in SAMPLE_QUESTIONS
+            if (filter_type == "All" or q["type"] == filter_type)
+            and (filter_diff == "All" or q["difficulty"] == filter_diff)
+        ]
 
-    if to_delete is not None:
-        st.session_state.questions.pop(to_delete)
-        st.rerun()
+        st.divider()
 
-    st.divider()
-    if st.button("Save all changes", icon=":material/save:", type="primary", use_container_width=True):
-        save_questions(st.session_state.questions)
-        st.success("All changes saved to qa_dataset.py")
+        added_any = False
+        for sq in filtered:
+            is_active = sq["id"] in active_ids
+            diff = sq.get("difficulty", "medium")
+            col_toggle, col_info = st.columns([1, 8])
+            with col_toggle:
+                enabled = st.toggle(
+                    label=sq["id"],
+                    value=is_active,
+                    key=f"sample_{sq['id']}",
+                )
+            with col_info:
+                st.markdown(
+                    f"**{sq['id']}** &nbsp; "
+                    f":{DIFFICULTY_COLOR[diff]}[{DIFFICULTY_BADGE[diff]}] &nbsp; "
+                    f"`{TYPE_LABELS.get(sq['type'], sq['type'])}`  \n"
+                    f"{sq['question']}"
+                )
+
+            if enabled and not is_active:
+                st.session_state.questions.append(copy.deepcopy(sq))
+                active_ids.add(sq["id"])
+                added_any = True
+            elif not enabled and is_active:
+                st.session_state.questions = [
+                    q for q in st.session_state.questions if q["id"] != sq["id"]
+                ]
+                active_ids.discard(sq["id"])
+                added_any = True
+
+        if added_any:
+            save_questions(st.session_state.questions)
+            st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -336,6 +566,13 @@ elif page == ":material/play_circle: Run Benchmark":
         )
         st.stop()
 
+    if not st.session_state.questions:
+        st.error(
+            "No active questions. Go to the Questions page and enable at least one question.",
+            icon=":material/error:",
+        )
+        st.stop()
+
     env_path = HERE / ".env"
     api_key_present = env_path.exists() and "OPENROUTER_API_KEY" in env_path.read_text()
     if not api_key_present:
@@ -345,7 +582,7 @@ elif page == ":material/play_circle: Run Benchmark":
         )
 
     st.markdown(f"**{len(docs)} document(s) ready:** {', '.join(docs)}")
-    st.markdown(f"**{len(st.session_state.questions)} question(s)** loaded.")
+    st.markdown(f"**{len(st.session_state.questions)} active question(s)** will be evaluated.")
     st.divider()
 
     run_btn = st.button(
@@ -402,7 +639,6 @@ elif page == ":material/bar_chart: Results":
     df_summary = pd.DataFrame(summary)
     df_raw = pd.DataFrame(raw)
 
-    # ── Winner banner ─────────────────────────────────────────────────────────
     best = df_summary.loc[df_summary["composite_score"].idxmax()]
     st.success(
         f"Best strategy: **{best['strategy_id']} — {best['strategy_name']}**  "
@@ -410,7 +646,6 @@ elif page == ":material/bar_chart: Results":
         icon=":material/trophy:",
     )
 
-    # ── Metric legend ─────────────────────────────────────────────────────────
     with st.expander("What do the metrics mean?", icon=":material/help:"):
         cols = st.columns(3)
         for idx, (key, info) in enumerate(METRIC_INFO.items()):
@@ -418,7 +653,6 @@ elif page == ":material/bar_chart: Results":
                 st.markdown(f"**{info['label']}**")
                 st.caption(info["help"])
 
-    # ── Summary table ─────────────────────────────────────────────────────────
     st.markdown("### Strategy Summary")
     display_cols = {
         "strategy_id": "ID",
@@ -434,14 +668,10 @@ elif page == ":material/bar_chart: Results":
         "composite_score": "Composite Score",
     }
     df_disp = df_summary.rename(columns=display_cols)[list(display_cols.values())]
-
     numeric_cols = [
-        METRIC_INFO["recall_at_5"]["label"],
-        METRIC_INFO["mrr"]["label"],
-        METRIC_INFO["f1"]["label"],
-        METRIC_INFO["faithfulness"]["label"],
-        METRIC_INFO["relevance"]["label"],
-        "Composite Score",
+        METRIC_INFO["recall_at_5"]["label"], METRIC_INFO["mrr"]["label"],
+        METRIC_INFO["f1"]["label"], METRIC_INFO["faithfulness"]["label"],
+        METRIC_INFO["relevance"]["label"], "Composite Score",
     ]
 
     def highlight_best(s):
@@ -453,12 +683,10 @@ elif page == ":material/bar_chart: Results":
     )
     st.dataframe(styled, use_container_width=True, hide_index=True)
 
-    # ── Radar chart ───────────────────────────────────────────────────────────
     st.markdown("### Performance Radar")
     st.caption("Each axis is one metric (0 = worst, 1 = best). A larger filled area means a stronger strategy overall.")
     metrics_radar = ["recall_at_5", "mrr", "f1", "faithfulness", "relevance"]
     radar_labels = [METRIC_INFO[m]["label"] for m in metrics_radar]
-
     fig_radar = go.Figure()
     colors = px.colors.qualitative.Set2
     for i, row in df_summary.iterrows():
@@ -474,13 +702,10 @@ elif page == ":material/bar_chart: Results":
         ))
     fig_radar.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-        showlegend=True,
-        height=420,
-        margin=dict(t=30, b=30),
+        showlegend=True, height=420, margin=dict(t=30, b=30),
     )
     st.plotly_chart(fig_radar, use_container_width=True)
 
-    # ── Bar chart ─────────────────────────────────────────────────────────────
     st.markdown("### Metric Comparison")
     metric_choice = st.selectbox(
         "Select a metric to compare",
@@ -488,38 +713,26 @@ elif page == ":material/bar_chart: Results":
         format_func=lambda x: METRIC_INFO[x]["label"],
     )
     st.caption(METRIC_INFO[metric_choice]["help"])
-
     fig_bar = px.bar(
-        df_summary,
-        x="strategy_id",
-        y=metric_choice,
-        color="strategy_id",
+        df_summary, x="strategy_id", y=metric_choice, color="strategy_id",
         text=df_summary[metric_choice].round(3),
         labels={"strategy_id": "Strategy", metric_choice: METRIC_INFO[metric_choice]["label"]},
-        color_discrete_sequence=px.colors.qualitative.Set2,
-        height=350,
+        color_discrete_sequence=px.colors.qualitative.Set2, height=350,
     )
     fig_bar.update_traces(textposition="outside")
     fig_bar.update_layout(showlegend=False, margin=dict(t=20, b=20))
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # ── Per-question heatmap ──────────────────────────────────────────────────
     if not df_raw.empty:
         st.markdown("### Per-Question F1 Heatmap")
         st.caption(
             "Each cell shows the F1 Score for one question (row) and one strategy (column). "
             "Green = good match with expected answer, red = poor match or no expected answer provided."
         )
-        pivot = df_raw.pivot_table(
-            index="q_id", columns="strategy_id", values="f1", aggfunc="mean"
-        )
+        pivot = df_raw.pivot_table(index="q_id", columns="strategy_id", values="f1", aggfunc="mean")
         fig_heat = px.imshow(
-            pivot,
-            color_continuous_scale="RdYlGn",
-            zmin=0,
-            zmax=1,
-            labels={"color": "F1 Score"},
-            aspect="auto",
+            pivot, color_continuous_scale="RdYlGn", zmin=0, zmax=1,
+            labels={"color": "F1 Score"}, aspect="auto",
             height=max(400, len(pivot) * 28),
         )
         fig_heat.update_layout(margin=dict(t=20, b=20))
@@ -531,11 +744,9 @@ elif page == ":material/bar_chart: Results":
             st.caption("Are harder questions systematically worse for certain strategies?")
             df_diff = df_raw.groupby(["strategy_id", "difficulty"])["f1"].mean().reset_index()
             fig_d = px.bar(
-                df_diff, x="difficulty", y="f1", color="strategy_id",
-                barmode="group",
+                df_diff, x="difficulty", y="f1", color="strategy_id", barmode="group",
                 labels={"f1": "Avg F1", "difficulty": "Difficulty"},
-                color_discrete_sequence=px.colors.qualitative.Set2,
-                height=320,
+                color_discrete_sequence=px.colors.qualitative.Set2, height=320,
                 category_orders={"difficulty": ["easy", "medium", "hard"]},
             )
             st.plotly_chart(fig_d, use_container_width=True)
@@ -545,15 +756,12 @@ elif page == ":material/bar_chart: Results":
             st.caption("Which types of questions are handled best by each strategy?")
             df_type = df_raw.groupby(["strategy_id", "type"])["f1"].mean().reset_index()
             fig_t = px.bar(
-                df_type, x="type", y="f1", color="strategy_id",
-                barmode="group",
+                df_type, x="type", y="f1", color="strategy_id", barmode="group",
                 labels={"f1": "Avg F1", "type": "Type"},
-                color_discrete_sequence=px.colors.qualitative.Set2,
-                height=320,
+                color_discrete_sequence=px.colors.qualitative.Set2, height=320,
             )
             st.plotly_chart(fig_t, use_container_width=True)
 
-        # ── Full detail table ──────────────────────────────────────────────────
         st.markdown("### Full Detail Table")
         with st.expander("Show all results"):
             detail_cols = [
@@ -564,7 +772,6 @@ elif page == ":material/bar_chart: Results":
             existing = [c for c in detail_cols if c in df_raw.columns]
             st.dataframe(df_raw[existing], use_container_width=True, hide_index=True)
 
-    # ── Download ──────────────────────────────────────────────────────────────
     st.divider()
     xlsx_path = RESULTS_DIR / "benchmark_results.xlsx"
     if xlsx_path.exists():
