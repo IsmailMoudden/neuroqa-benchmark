@@ -5,8 +5,7 @@ Run with:  streamlit run app.py
 
 import json
 import copy
-import subprocess
-import sys
+import os
 import threading
 from pathlib import Path
 
@@ -614,19 +613,9 @@ elif page == ":material/play_circle: Run Benchmark":
 
     LOG_FILE  = HERE / "results" / "_benchmark_log.txt"
     DONE_FILE = HERE / "results" / "_benchmark_done.txt"
+    ERR_FILE  = HERE / "results" / "_benchmark_error.txt"
 
-    # Check if a previously launched process has finished
-    if st.session_state.benchmark_pid is not None:
-        import os as _os
-        try:
-            _os.kill(st.session_state.benchmark_pid, 0)  # 0 = just check existence
-            _still_running = True
-        except OSError:
-            _still_running = False
-        if not _still_running or DONE_FILE.exists():
-            st.session_state.benchmark_pid = None
-
-    _is_running = st.session_state.benchmark_pid is not None
+    _is_running = st.session_state.benchmark_pid is not None and not DONE_FILE.exists() and not ERR_FILE.exists()
 
     run_btn = st.button(
         "Start benchmark",
@@ -636,21 +625,39 @@ elif page == ":material/play_circle: Run Benchmark":
     )
 
     if run_btn:
+        # Inject API key into env so run_benchmark.py finds it via os.getenv
+        os.environ["OPENROUTER_API_KEY"] = api_key or ""
         LOG_FILE.write_text("Benchmark started...\n")
         DONE_FILE.unlink(missing_ok=True)
-        cmd = [sys.executable, "-u", "run_benchmark.py", "--strategies"] + selected_strategies
-        import os as _os
-        child_env = _os.environ.copy()
-        if api_key:
-            child_env["OPENROUTER_API_KEY"] = api_key
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(HERE),
-            stdout=LOG_FILE.open("w"),
-            stderr=subprocess.STDOUT,
-            env=child_env,
+        ERR_FILE.unlink(missing_ok=True)
+
+        # Import here to avoid circular issues at module load
+        import sys as _sys
+        _sys.path.insert(0, str(HERE))
+        import run_benchmark as _rb
+        from run_benchmark import STRATEGIES as _ALL_STRATEGIES
+
+        _active = [s for s in _ALL_STRATEGIES if s["id"] in selected_strategies]
+
+        def _run_thread(active_strategies, log_file, done_file, err_file):
+            import io, contextlib
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                    _rb.run_benchmark(strategies=active_strategies)
+                log_file.write_text(buf.getvalue())
+                done_file.write_text("done")
+            except Exception as exc:
+                log_file.write_text(buf.getvalue() + f"\n\nERROR: {exc}")
+                err_file.write_text(str(exc))
+
+        t = threading.Thread(
+            target=_run_thread,
+            args=(_active, LOG_FILE, DONE_FILE, ERR_FILE),
+            daemon=True,
         )
-        st.session_state.benchmark_pid = proc.pid
+        t.start()
+        st.session_state.benchmark_pid = t.ident
         st.rerun()
 
     if _is_running:
@@ -665,10 +672,9 @@ elif page == ":material/play_circle: Run Benchmark":
         st.success("Benchmark complete. Go to the Results page to explore the output.")
         st.code(log_text, language="")
 
-    elif LOG_FILE.exists() and LOG_FILE.stat().st_size > 0 and not DONE_FILE.exists():
-        # Process died without writing done file (error)
-        log_text = LOG_FILE.read_text()
-        st.error("Benchmark ended with an error. See log below.")
+    elif ERR_FILE.exists():
+        log_text = LOG_FILE.read_text() if LOG_FILE.exists() else ""
+        st.error(f"Benchmark failed: {ERR_FILE.read_text()}")
         st.code(log_text, language="")
 
 
