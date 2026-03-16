@@ -61,6 +61,7 @@ RESULTS_DIR = Path(__file__).parent / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
+_EMBED_MODEL_CACHE = None
 LLM_MODEL = "anthropic/claude-sonnet-4-5"
 TOP_K = 5
 
@@ -205,7 +206,12 @@ def run_benchmark(strategies: List[Dict] = None):
         base_url="https://openrouter.ai/api/v1",
     )
 
-    embed_model = SentenceTransformer(EMBED_MODEL_NAME)
+    # Cache embed model at module level — only loads once per process
+    global _EMBED_MODEL_CACHE
+    if "_EMBED_MODEL_CACHE" not in globals() or _EMBED_MODEL_CACHE is None:
+        print(f"Loading embedding model {EMBED_MODEL_NAME}...")
+        _EMBED_MODEL_CACHE = SentenceTransformer(EMBED_MODEL_NAME)
+    embed_model = _EMBED_MODEL_CACHE
     docs = load_all_docs()
 
     all_results: List[Dict] = []

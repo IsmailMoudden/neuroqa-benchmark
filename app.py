@@ -693,12 +693,17 @@ elif page == ":material/bar_chart: Results":
     df_summary = pd.DataFrame(summary)
     df_raw = pd.DataFrame(raw)
 
-    best = df_summary.loc[df_summary["composite_score"].idxmax()]
-    st.success(
-        f"Best strategy: **{best['strategy_id']} — {best['strategy_name']}**  "
-        f"(Composite score: {best['composite_score']:.3f})",
-        icon=":material/trophy:",
-    )
+    n_strategies = len(df_summary)
+    n_questions  = df_raw["q_id"].nunique() if not df_raw.empty else 0
+
+    # ── Winner banner ─────────────────────────────────────────────────────────
+    if n_strategies > 1:
+        best = df_summary.loc[df_summary["composite_score"].idxmax()]
+        st.success(
+            f"Best strategy: **{best['strategy_id']} — {best['strategy_name']}**  "
+            f"(Composite score: {best['composite_score']:.3f})",
+            icon=":material/trophy:",
+        )
 
     with st.expander("What do the metrics mean?", icon=":material/help:"):
         cols = st.columns(3)
@@ -707,6 +712,7 @@ elif page == ":material/bar_chart: Results":
                 st.markdown(f"**{info['label']}**")
                 st.caption(info["help"])
 
+    # ── Strategy summary table ────────────────────────────────────────────────
     st.markdown("### Strategy Summary")
     display_cols = {
         "strategy_id": "ID",
@@ -729,6 +735,8 @@ elif page == ":material/bar_chart: Results":
     ]
 
     def highlight_best(s):
+        if s.nunique() <= 1:
+            return [""] * len(s)
         is_best = s == s.max()
         return ["background-color: #d4edda; font-weight: bold" if v else "" for v in is_best]
 
@@ -737,94 +745,97 @@ elif page == ":material/bar_chart: Results":
     )
     st.dataframe(styled, use_container_width=True, hide_index=True)
 
-    st.markdown("### Performance Radar")
-    st.caption("Each axis is one metric (0 = worst, 1 = best). A larger filled area means a stronger strategy overall.")
-    metrics_radar = ["recall_at_5", "mrr", "f1", "faithfulness", "relevance"]
-    radar_labels = [METRIC_INFO[m]["label"] for m in metrics_radar]
-    fig_radar = go.Figure()
-    colors = px.colors.qualitative.Set2
-    for i, row in df_summary.iterrows():
-        vals = [row[m] for m in metrics_radar]
-        vals_closed = vals + [vals[0]]
-        fig_radar.add_trace(go.Scatterpolar(
-            r=vals_closed,
-            theta=radar_labels + [radar_labels[0]],
-            fill="toself",
-            name=f"{row['strategy_id']} — {row['strategy_name']}",
-            line_color=colors[i % len(colors)],
-            opacity=0.7,
-        ))
-    fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-        showlegend=True, height=420, margin=dict(t=30, b=30),
-    )
-    st.plotly_chart(fig_radar, use_container_width=True)
+    # ── Charts — only show when comparing multiple strategies ─────────────────
+    if n_strategies > 1:
+        st.markdown("### Performance Radar")
+        st.caption("Each axis is one metric (0 = worst, 1 = best). A larger filled area means a stronger strategy overall.")
+        metrics_radar = ["recall_at_5", "mrr", "f1", "faithfulness", "relevance"]
+        radar_labels = [METRIC_INFO[m]["label"] for m in metrics_radar]
+        fig_radar = go.Figure()
+        colors = px.colors.qualitative.Set2
+        for i, row in df_summary.iterrows():
+            vals = [row[m] for m in metrics_radar]
+            vals_closed = vals + [vals[0]]
+            fig_radar.add_trace(go.Scatterpolar(
+                r=vals_closed,
+                theta=radar_labels + [radar_labels[0]],
+                fill="toself",
+                name=f"{row['strategy_id']} — {row['strategy_name']}",
+                line_color=colors[i % len(colors)],
+                opacity=0.7,
+            ))
+        fig_radar.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+            showlegend=True, height=420, margin=dict(t=30, b=30),
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
 
-    st.markdown("### Metric Comparison")
-    metric_choice = st.selectbox(
-        "Select a metric to compare",
-        options=list(METRIC_INFO.keys()),
-        format_func=lambda x: METRIC_INFO[x]["label"],
-    )
-    st.caption(METRIC_INFO[metric_choice]["help"])
-    fig_bar = px.bar(
-        df_summary, x="strategy_id", y=metric_choice, color="strategy_id",
-        text=df_summary[metric_choice].round(3),
-        labels={"strategy_id": "Strategy", metric_choice: METRIC_INFO[metric_choice]["label"]},
-        color_discrete_sequence=px.colors.qualitative.Set2, height=350,
-    )
-    fig_bar.update_traces(textposition="outside")
-    fig_bar.update_layout(showlegend=False, margin=dict(t=20, b=20))
-    st.plotly_chart(fig_bar, use_container_width=True)
+        st.markdown("### Metric Comparison")
+        metric_choice = st.selectbox(
+            "Select a metric to compare",
+            options=list(METRIC_INFO.keys()),
+            format_func=lambda x: METRIC_INFO[x]["label"],
+        )
+        st.caption(METRIC_INFO[metric_choice]["help"])
+        fig_bar = px.bar(
+            df_summary, x="strategy_id", y=metric_choice, color="strategy_id",
+            text=df_summary[metric_choice].round(3),
+            labels={"strategy_id": "Strategy", metric_choice: METRIC_INFO[metric_choice]["label"]},
+            color_discrete_sequence=px.colors.qualitative.Set2, height=350,
+        )
+        fig_bar.update_traces(textposition="outside")
+        fig_bar.update_layout(showlegend=False, margin=dict(t=20, b=20))
+        st.plotly_chart(fig_bar, use_container_width=True)
 
+    # ── Per-question drill-down (the useful part) ─────────────────────────────
     if not df_raw.empty:
-        st.markdown("### Per-Question F1 Heatmap")
-        st.caption(
-            "Each cell shows the F1 Score for one question (row) and one strategy (column). "
-            "Green = good match with expected answer, red = poor match or no expected answer provided."
-        )
-        pivot = df_raw.pivot_table(index="q_id", columns="strategy_id", values="f1", aggfunc="mean")
-        fig_heat = px.imshow(
-            pivot, color_continuous_scale="RdYlGn", zmin=0, zmax=1,
-            labels={"color": "F1 Score"}, aspect="auto",
-            height=max(400, len(pivot) * 28),
-        )
-        fig_heat.update_layout(margin=dict(t=20, b=20))
-        st.plotly_chart(fig_heat, use_container_width=True)
+        st.markdown("### Question-by-Question Results")
+        st.caption("Select a question to see the generated answer, scores, and which document chunks were retrieved.")
 
-        col_d, col_t = st.columns(2)
-        with col_d:
-            st.markdown("#### F1 by Difficulty")
-            st.caption("Are harder questions systematically worse for certain strategies?")
-            df_diff = df_raw.groupby(["strategy_id", "difficulty"])["f1"].mean().reset_index()
-            fig_d = px.bar(
-                df_diff, x="difficulty", y="f1", color="strategy_id", barmode="group",
-                labels={"f1": "Avg F1", "difficulty": "Difficulty"},
-                color_discrete_sequence=px.colors.qualitative.Set2, height=320,
-                category_orders={"difficulty": ["easy", "medium", "hard"]},
+        question_ids = sorted(df_raw["q_id"].unique())
+        selected_qid = st.selectbox("Question", options=question_ids, key="res_qid")
+        q_rows = df_raw[df_raw["q_id"] == selected_qid]
+
+        # Show question text once
+        q_text = q_rows.iloc[0]["question"]
+        q_expected = q_rows.iloc[0].get("expected", "")
+        st.markdown(f"**Question:** {q_text}")
+        if q_expected:
+            st.markdown(f"**Expected answer:** {q_expected}")
+        st.divider()
+
+        for _, row in q_rows.iterrows():
+            sid = row["strategy_id"]
+            sname = row["strategy_name"]
+            with st.expander(f"Strategy {sid} — {sname}", expanded=True):
+                # Scores inline
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric(METRIC_INFO["recall_at_5"]["label"], f"{row['recall_at_5']:.2f}")
+                m2.metric(METRIC_INFO["mrr"]["label"],         f"{row['mrr']:.2f}")
+                m3.metric(METRIC_INFO["f1"]["label"],          f"{row['f1']:.2f}")
+                m4.metric(METRIC_INFO["faithfulness"]["label"],f"{row['faithfulness']:.2f}")
+                m5.metric(METRIC_INFO["relevance"]["label"],   f"{row['relevance']:.2f}")
+
+                st.markdown("**Generated answer:**")
+                st.info(row["answer"] or "_(no answer)_")
+
+                # Retrieved chunks
+                chunks = row.get("retrieved_chunks", [])
+                if chunks:
+                    st.markdown(f"**Retrieved chunks** ({len(chunks)} passages used to answer):")
+                    for c in chunks:
+                        st.caption(f"• {c}")
+
+        # Heatmap only when multiple questions AND strategies
+        if n_strategies > 1 and n_questions > 1:
+            st.markdown("### F1 Heatmap — all questions × all strategies")
+            pivot = df_raw.pivot_table(index="q_id", columns="strategy_id", values="f1", aggfunc="mean")
+            fig_heat = px.imshow(
+                pivot, color_continuous_scale="RdYlGn", zmin=0, zmax=1,
+                labels={"color": "F1 Score"}, aspect="auto",
+                height=max(400, len(pivot) * 28),
             )
-            st.plotly_chart(fig_d, use_container_width=True)
-
-        with col_t:
-            st.markdown("#### F1 by Question Type")
-            st.caption("Which types of questions are handled best by each strategy?")
-            df_type = df_raw.groupby(["strategy_id", "type"])["f1"].mean().reset_index()
-            fig_t = px.bar(
-                df_type, x="type", y="f1", color="strategy_id", barmode="group",
-                labels={"f1": "Avg F1", "type": "Type"},
-                color_discrete_sequence=px.colors.qualitative.Set2, height=320,
-            )
-            st.plotly_chart(fig_t, use_container_width=True)
-
-        st.markdown("### Full Detail Table")
-        with st.expander("Show all results"):
-            detail_cols = [
-                "strategy_id", "q_id", "question", "difficulty", "type",
-                "source_doc", "recall_at_5", "mrr", "f1", "faithfulness",
-                "relevance", "answer", "expected",
-            ]
-            existing = [c for c in detail_cols if c in df_raw.columns]
-            st.dataframe(df_raw[existing], use_container_width=True, hide_index=True)
+            st.plotly_chart(fig_heat, use_container_width=True)
 
     st.divider()
     xlsx_path = RESULTS_DIR / "benchmark_results.xlsx"
