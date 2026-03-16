@@ -1,0 +1,4 @@
+from chunking.loaders import load_docx_text, load_docx_structured
+from chunking.sliding_window import sliding_window_chunks
+from chunking.structure_aware import structure_aware_chunks
+from chunking.semantic import semantic_chunks

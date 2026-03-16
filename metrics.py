@@ -1,80 +1,13 @@
-"""
-Metric computation for the RAG benchmark.
-"""
-
+import os
 import re
-import json
 import time
-import urllib.request
 from collections import Counter
 from typing import List, Dict, Optional
+from urllib.parse import urlparse
 
+from openai import AzureOpenAI
 
-# ─── Source doc normalisation ─────────────────────────────────────────────────
-
-def _norm_doc(name: str) -> str:
-    """Strip .docx extension and all non-alphanumeric chars, lowercase."""
-    name = re.sub(r"\.docx$", "", name, flags=re.IGNORECASE)
-    name = re.sub(r"[^a-z0-9]", "", name.lower())
-    return name
-
-
-def is_relevant_chunk(chunk: Dict, question: Dict) -> bool:
-    """A chunk is relevant if source matches AND ≥2 keywords appear in text."""
-    if _norm_doc(chunk["source_doc"]) != _norm_doc(question["source_doc"]):
-        return False
-    text_lower = chunk["text"].lower()
-    matches = sum(1 for kw in question["keywords"] if kw.lower() in text_lower)
-    return matches >= 2
-
-
-# ─── Retrieval metrics ────────────────────────────────────────────────────────
-
-def recall_at_k(
-    all_chunks: List[Dict],
-    retrieved: List[Dict],
-    question: Dict,
-    k: int = 5,
-) -> float:
-    total_relevant = sum(1 for c in all_chunks if is_relevant_chunk(c, question))
-    if total_relevant == 0:
-        return 0.0
-    relevant_retrieved = sum(1 for c in retrieved[:k] if is_relevant_chunk(c, question))
-    return relevant_retrieved / total_relevant
-
-
-def mrr(retrieved: List[Dict], question: Dict) -> float:
-    for rank, chunk in enumerate(retrieved, start=1):
-        if is_relevant_chunk(chunk, question):
-            return 1.0 / rank
-    return 0.0
-
-
-# ─── Token F1 ────────────────────────────────────────────────────────────────
-
-def _tokenize_f1(text: str) -> List[str]:
-    """Lowercase + strip punctuation → word tokens."""
-    text = text.lower()
-    text = re.sub(r"[^\w\s]", " ", text)
-    return text.split()
-
-
-def token_f1(prediction: str, reference: str) -> float:
-    pred_tokens = _tokenize_f1(prediction)
-    ref_tokens = _tokenize_f1(reference)
-    if not pred_tokens or not ref_tokens:
-        return 0.0
-    pred_count = Counter(pred_tokens)
-    ref_count = Counter(ref_tokens)
-    common = sum((pred_count & ref_count).values())
-    precision = common / len(pred_tokens)
-    recall = common / len(ref_tokens)
-    if precision + recall == 0:
-        return 0.0
-    return 2 * precision * recall / (precision + recall)
-
-
-# ─── LLM-as-judge ─────────────────────────────────────────────────────────────
+AZURE_DEPLOYMENT = "gpt-4o"
 
 FAITHFULNESS_PROMPT = (
     'Score 0-5: does the answer rely only on the context? '
@@ -89,34 +22,67 @@ RELEVANCE_PROMPT = (
 )
 
 
-JUDGE_MODEL = "google/gemma-3-4b-it:free"
+def _norm_doc(name: str) -> str:
+    name = re.sub(r"\.docx$", "", name, flags=re.IGNORECASE)
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def is_relevant_chunk(chunk: Dict, question: Dict) -> bool:
+    if _norm_doc(chunk["source_doc"]) != _norm_doc(question["source_doc"]):
+        return False
+    text_lower = chunk["text"].lower()
+    return sum(1 for kw in question["keywords"] if kw.lower() in text_lower) >= 2
+
+
+def recall_at_k(all_chunks: List[Dict], retrieved: List[Dict], question: Dict, k: int = 5) -> float:
+    total = sum(1 for c in all_chunks if is_relevant_chunk(c, question))
+    if total == 0:
+        return 0.0
+    hits = sum(1 for c in retrieved[:k] if is_relevant_chunk(c, question))
+    return hits / total
+
+
+def mrr(retrieved: List[Dict], question: Dict) -> float:
+    for rank, chunk in enumerate(retrieved, start=1):
+        if is_relevant_chunk(chunk, question):
+            return 1.0 / rank
+    return 0.0
+
+
+def token_f1(prediction: str, reference: str) -> float:
+    def tokenize(text):
+        return re.sub(r"[^\w\s]", " ", text.lower()).split()
+
+    pred = tokenize(prediction)
+    ref  = tokenize(reference)
+    if not pred or not ref:
+        return 0.0
+    common = sum((Counter(pred) & Counter(ref)).values())
+    p = common / len(pred)
+    r = common / len(ref)
+    return 2 * p * r / (p + r) if p + r else 0.0
+
+
+def _azure_client(api_key: str) -> AzureOpenAI:
+    endpoint = os.getenv("AZURE_API_ENDPOINT", "")
+    base_url = "{uri.scheme}://{uri.netloc}/".format(uri=urlparse(endpoint))
+    return AzureOpenAI(azure_endpoint=base_url, api_key=api_key, api_version="2025-01-01-preview")
 
 
 def _call_judge(api_key: str, prompt: str, retries: int = 3) -> Optional[Dict]:
-    payload = json.dumps({
-        "model": JUDGE_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 256,
-        "temperature": 0,
-    }).encode("utf-8")
+    client = _azure_client(api_key)
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(
-                "https://openrouter.ai/api/v1/chat/completions",
-                data=payload,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://neuroqa-benchmark.streamlit.app",
-                    "X-Title": "NeuroQA Benchmark",
-                },
-                method="POST",
+            resp = client.chat.completions.create(
+                model=AZURE_DEPLOYMENT,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=256,
+                temperature=0,
             )
-            with urllib.request.urlopen(req, timeout=60) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            raw = data["choices"][0]["message"]["content"].strip()
+            raw = resp.choices[0].message.content.strip()
             m = re.search(r"\{.*\}", raw, re.DOTALL)
             if m:
+                import json
                 return json.loads(m.group())
         except Exception as e:
             wait = 15 if "429" in str(e) else 2 ** attempt
@@ -128,22 +94,19 @@ def _call_judge(api_key: str, prompt: str, retries: int = 3) -> Optional[Dict]:
 
 
 def faithfulness_score(api_key: str, context: str, answer: str) -> float:
-    prompt = FAITHFULNESS_PROMPT.format(context=context[:3000], answer=answer)
-    result = _call_judge(api_key, prompt)
+    result = _call_judge(api_key, FAITHFULNESS_PROMPT.format(context=context[:3000], answer=answer))
     if result and "score" in result:
         return min(max(int(result["score"]), 0), 5) / 5.0
     return 0.0
 
 
 def relevance_score(api_key: str, question: str, answer: str) -> float:
-    prompt = RELEVANCE_PROMPT.format(question=question, answer=answer)
-    result = _call_judge(api_key, prompt)
+    result = _call_judge(api_key, RELEVANCE_PROMPT.format(question=question, answer=answer))
     if result and "score" in result:
         return min(max(int(result["score"]), 0), 5) / 5.0
     return 0.0
 
 
-# ─── Cost formula ─────────────────────────────────────────────────────────────
-
 def compute_cost(tokens_input: int, tokens_output: int) -> float:
-    return (tokens_input * 0.003 + tokens_output * 0.015) / 1000
+    # gpt-4o pricing: $2.50/1M input, $10/1M output
+    return (tokens_input * 2.50 + tokens_output * 10.0) / 1_000_000
