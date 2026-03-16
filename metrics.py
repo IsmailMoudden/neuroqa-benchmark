@@ -94,7 +94,7 @@ def _call_judge(client: OpenAI, prompt: str, retries: int = 3) -> Optional[Dict]
     for attempt in range(retries):
         try:
             resp = client.chat.completions.create(
-                model="anthropic/claude-sonnet-4-5",
+                model="meta-llama/llama-3.1-8b-instruct:free",
                 max_tokens=256,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}],

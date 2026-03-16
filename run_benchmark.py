@@ -62,7 +62,7 @@ RESULTS_DIR.mkdir(exist_ok=True)
 
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
 _EMBED_MODEL_CACHE = None
-LLM_MODEL = "anthropic/claude-sonnet-4-5"
+LLM_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
 TOP_K = 5
 
 STRATEGIES = [
