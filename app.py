@@ -8,7 +8,7 @@ import copy
 import os
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -52,7 +52,7 @@ _db_init()
 
 
 def db_save_run(raw: list, summary: list, label: str = ""):
-    run_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    run_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     if not label:
         strats = ", ".join(sorted({r["strategy_id"] for r in raw}))
         n_q = len({r["q_id"] for r in raw})
@@ -656,12 +656,18 @@ elif page == ":material/play_circle: Run Benchmark":
     # Resolve API key: st.secrets (Streamlit Cloud) > .env (local)
     env_path = HERE / ".env"
     api_key = None
-    if "OPENROUTER_API_KEY" in st.secrets:
-        api_key = st.secrets["OPENROUTER_API_KEY"]
-    elif env_path.exists():
+    api_key_source = "not found"
+    try:
+        if "OPENROUTER_API_KEY" in st.secrets:
+            api_key = st.secrets["OPENROUTER_API_KEY"]
+            api_key_source = "st.secrets"
+    except Exception:
+        pass
+    if not api_key and env_path.exists():
         for line in env_path.read_text().splitlines():
             if line.startswith("OPENROUTER_API_KEY"):
-                api_key = line.split("=", 1)[-1].strip()
+                api_key = line.split("=", 1)[-1].strip().strip('"').strip("'")
+                api_key_source = ".env file"
                 break
 
     if not api_key:
@@ -669,6 +675,8 @@ elif page == ":material/play_circle: Run Benchmark":
             "No API key found. Add `OPENROUTER_API_KEY` to Streamlit secrets (cloud) or a `.env` file (local).",
             icon=":material/warning:",
         )
+    else:
+        st.caption(f":material/key: API key loaded from **{api_key_source}** — `{api_key[:12]}...`")
 
     # ── Strategy selector ─────────────────────────────────────────────────────
     STRATEGY_OPTIONS = {
@@ -729,6 +737,13 @@ elif page == ":material/play_circle: Run Benchmark":
         def _run_thread(active_strategies, embed_model, the_api_key, log_file, done_file, err_file):
             import io, contextlib
             buf = io.StringIO()
+            # Diagnostic header
+            key_preview = (the_api_key[:12] + "...") if the_api_key else "MISSING"
+            buf.write(f"=== Benchmark started ===\n")
+            buf.write(f"API key: {key_preview}\n")
+            buf.write(f"Strategies: {[s['id'] for s in active_strategies]}\n")
+            buf.write(f"Questions: {len(_rb.QA_DATASET)}\n\n")
+            log_file.write_text(buf.getvalue())
             try:
                 with contextlib.redirect_stdout(buf):
                     _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model, api_key=the_api_key)
@@ -865,7 +880,7 @@ elif page == ":material/bar_chart: Results":
     styled = df_disp.style.apply(highlight_best, subset=numeric_cols).format(
         {c: "{:.3f}" for c in numeric_cols} | {"Cost / Query ($)": "{:.5f}", "Avg Tokens": "{:.1f}"}
     )
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width="stretch", hide_index=True)
 
     # ── Charts — only show when comparing multiple strategies ─────────────────
     if n_strategies > 1:
@@ -890,7 +905,7 @@ elif page == ":material/bar_chart: Results":
             polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
             showlegend=True, height=420, margin=dict(t=30, b=30),
         )
-        st.plotly_chart(fig_radar, use_container_width=True)
+        st.plotly_chart(fig_radar, width="stretch")
 
         st.markdown("### Metric Comparison")
         metric_choice = st.selectbox(
@@ -907,7 +922,7 @@ elif page == ":material/bar_chart: Results":
         )
         fig_bar.update_traces(textposition="outside")
         fig_bar.update_layout(showlegend=False, margin=dict(t=20, b=20))
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
 
     # ── Per-question drill-down (the useful part) ─────────────────────────────
     if not df_raw.empty:
@@ -965,7 +980,7 @@ elif page == ":material/bar_chart: Results":
                 labels={"color": "F1 Score"}, aspect="auto",
                 height=max(400, len(pivot) * 28),
             )
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.plotly_chart(fig_heat, width="stretch")
 
     st.divider()
     xlsx_path = RESULTS_DIR / "benchmark_results.xlsx"
