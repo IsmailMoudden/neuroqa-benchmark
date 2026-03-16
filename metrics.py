@@ -107,7 +107,7 @@ def _call_judge(client: OpenAI, prompt: str, retries: int = 3) -> Optional[Dict]
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
             else:
-                print(f"  [judge] failed after {retries} attempts: {e}")
+                print(f"  [judge] FAILED after {retries} attempts: {type(e).__name__}: {e}")
     return None
 
 

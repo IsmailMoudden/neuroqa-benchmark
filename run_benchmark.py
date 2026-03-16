@@ -185,11 +185,11 @@ def generate_answer(
             return answer, tokens_in, tokens_out
         except Exception as e:
             if attempt < 2:
-                print(f"  [generate] retry {attempt+1}: {e}")
+                print(f"  [generate] retry {attempt+1}: {type(e).__name__}: {e}")
                 time.sleep(2 ** attempt)
             else:
-                print(f"  [generate] failed: {e}")
-                return "", 0, 0
+                print(f"  [generate] FAILED after 3 attempts: {type(e).__name__}: {e}")
+                raise  # re-raise so the thread captures it
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
