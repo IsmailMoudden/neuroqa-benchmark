@@ -209,6 +209,11 @@ def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransforme
     client = OpenAI(
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://neuroqa-benchmark.streamlit.app",
+            "X-Title": "NeuroQA Benchmark",
+        },
     )
 
     # Use passed-in model (cached by caller) or load fresh
