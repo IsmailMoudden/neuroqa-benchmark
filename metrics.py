@@ -9,17 +9,45 @@ from openai import AzureOpenAI
 
 AZURE_DEPLOYMENT = "gpt-4o"
 
-FAITHFULNESS_PROMPT = (
-    'Score 0-5: does the answer rely only on the context? '
-    'Respond JSON {{"score": <int>, "reason": "<str>"}}\n\n'
-    'Context:\n{context}\n\nAnswer:\n{answer}'
-)
+FAITHFULNESS_PROMPT = """\
+You are a strict judge. Score whether the answer is grounded in the context (no hallucination).
 
-RELEVANCE_PROMPT = (
-    'Score 0-5: is the answer relevant to the question? '
-    'Respond JSON {{"score": <int>, "reason": "<str>"}}\n\n'
-    'Question:\n{question}\n\nAnswer:\n{answer}'
-)
+Scoring rubric:
+0 — answer contradicts or ignores the context entirely
+1 — mostly made up, only trivial overlap with context
+2 — some grounding but significant unsupported claims
+3 — mostly grounded, minor unsupported details
+4 — fully grounded with negligible extrapolation
+5 — every claim is directly supported by the context
+
+Be strict. If the answer adds facts not present in the context, deduct points.
+Respond with JSON only: {{"score": <0-5>, "reason": "<one sentence>"}}
+
+Context:
+{context}
+
+Answer:
+{answer}"""
+
+RELEVANCE_PROMPT = """\
+You are a strict judge. Score how well the answer addresses the question.
+
+Scoring rubric:
+0 — completely off-topic or no answer
+1 — barely touches the question
+2 — partially relevant but misses the core ask
+3 — addresses the question but vague or incomplete
+4 — clear and mostly complete answer
+5 — precise, complete, and directly answers the question
+
+Be strict. Penalize vague, generic, or padded answers even if they mention the right topic.
+Respond with JSON only: {{"score": <0-5>, "reason": "<one sentence>"}}
+
+Question:
+{question}
+
+Answer:
+{answer}"""
 
 
 def _norm_doc(name: str) -> str:
