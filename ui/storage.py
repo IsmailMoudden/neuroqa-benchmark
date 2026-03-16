@@ -16,6 +16,8 @@ def list_source_docs() -> list:
 
 
 def load_questions() -> list:
+    if not QA_PATH.exists():
+        return []
     ns = {}
     exec(QA_PATH.read_text(encoding="utf-8"), ns)
     return copy.deepcopy(ns.get("QA_DATASET", []))
