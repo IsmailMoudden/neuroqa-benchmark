@@ -611,9 +611,13 @@ elif page == ":material/play_circle: Run Benchmark":
         disabled=st.session_state.benchmark_running or not selected_strategies,
     )
 
+    LOG_FILE = HERE / "results" / "_benchmark_log.txt"
+    DONE_FILE = HERE / "results" / "_benchmark_done.txt"
+
     if run_btn:
         st.session_state.benchmark_running = True
-        st.session_state.benchmark_log = ""
+        LOG_FILE.write_text("")
+        DONE_FILE.unlink(missing_ok=True)
 
         def _run():
             cmd = [sys.executable, "run_benchmark.py", "--strategies"] + selected_strategies
@@ -624,24 +628,32 @@ elif page == ":material/play_circle: Run Benchmark":
                 stderr=subprocess.STDOUT,
                 text=True,
             )
-            log = ""
-            for line in proc.stdout:
-                log += line
-                st.session_state.benchmark_log = log
+            with LOG_FILE.open("a") as lf:
+                for line in proc.stdout:
+                    lf.write(line)
+                    lf.flush()
             proc.wait()
-            st.session_state.benchmark_running = False
+            DONE_FILE.write_text("done")
 
         threading.Thread(target=_run, daemon=True).start()
         st.rerun()
 
     if st.session_state.benchmark_running:
-        st.warning("Benchmark is running — click Refresh to see latest output.")
-        st.code(st.session_state.benchmark_log or "Starting…", language="")
-        if st.button("Refresh log", icon=":material/refresh:"):
-            st.rerun()
-    elif st.session_state.benchmark_log:
+        done = DONE_FILE.exists()
+        log_text = LOG_FILE.read_text() if LOG_FILE.exists() else "Starting…"
+        if done:
+            st.session_state.benchmark_running = False
+            st.success("Benchmark complete. Go to the Results page to explore the output.")
+            st.code(log_text, language="")
+        else:
+            st.warning("Benchmark is running — click Refresh to see latest output.")
+            st.code(log_text or "Starting…", language="")
+            if st.button("Refresh log", icon=":material/refresh:"):
+                st.rerun()
+    elif DONE_FILE.exists():
+        log_text = LOG_FILE.read_text() if LOG_FILE.exists() else ""
         st.success("Benchmark complete. Go to the Results page to explore the output.")
-        st.code(st.session_state.benchmark_log, language="")
+        st.code(log_text, language="")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
