@@ -6,7 +6,9 @@ Run with:  streamlit run app.py
 import json
 import copy
 import os
+import sqlite3
 import threading
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -19,9 +21,70 @@ HERE = Path(__file__).parent
 SOURCES_DIR = HERE / "sources "          # trailing space matches existing folder
 RESULTS_DIR = HERE / "results"
 QA_PATH = HERE / "qa_dataset.py"
+DB_PATH = RESULTS_DIR / "benchmark_history.db"
 
 SOURCES_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
+
+
+# ─── Persistent results DB ────────────────────────────────────────────────────
+
+def _db_connect():
+    con = sqlite3.connect(str(DB_PATH))
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _db_init():
+    with _db_connect() as con:
+        con.executescript("""
+            CREATE TABLE IF NOT EXISTS runs (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_at    TEXT NOT NULL,
+                label     TEXT NOT NULL,
+                raw_json  TEXT NOT NULL,
+                summary_json TEXT NOT NULL
+            );
+        """)
+
+
+_db_init()
+
+
+def db_save_run(raw: list, summary: list, label: str = ""):
+    run_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    if not label:
+        strats = ", ".join(sorted({r["strategy_id"] for r in raw}))
+        n_q = len({r["q_id"] for r in raw})
+        label = f"{strats} · {n_q} question{'s' if n_q != 1 else ''}"
+    with _db_connect() as con:
+        con.execute(
+            "INSERT INTO runs (run_at, label, raw_json, summary_json) VALUES (?, ?, ?, ?)",
+            (run_at, label, json.dumps(raw), json.dumps(summary)),
+        )
+
+
+def db_list_runs() -> list[dict]:
+    with _db_connect() as con:
+        rows = con.execute(
+            "SELECT id, run_at, label FROM runs ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def db_load_run(run_id: int) -> tuple[list, list]:
+    with _db_connect() as con:
+        row = con.execute(
+            "SELECT raw_json, summary_json FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+    if row is None:
+        return [], []
+    return json.loads(row["raw_json"]), json.loads(row["summary_json"])
+
+
+def db_delete_run(run_id: int):
+    with _db_connect() as con:
+        con.execute("DELETE FROM runs WHERE id = ?", (run_id,))
 
 # ─── Sample question library (proposals — not active by default) ──────────────
 SAMPLE_QUESTIONS = [
@@ -212,6 +275,20 @@ def load_results() -> tuple[list[dict], list[dict]]:
     raw = json.loads(raw_path.read_text()) if raw_path.exists() else []
     summary = json.loads(summary_path.read_text()) if summary_path.exists() else []
     return raw, summary
+
+
+def _maybe_persist_latest_to_db():
+    """Called once after a run completes to save results to the history DB."""
+    raw, summary = load_results()
+    if not raw:
+        return
+    # Avoid duplicate: check if the last DB run has identical raw content
+    runs = db_list_runs()
+    if runs:
+        last_raw, _ = db_load_run(runs[0]["id"])
+        if last_raw == raw:
+            return
+    db_save_run(raw, summary)
 
 
 # ─── Metric definitions ───────────────────────────────────────────────────────
@@ -656,6 +733,7 @@ elif page == ":material/play_circle: Run Benchmark":
                 with contextlib.redirect_stdout(buf):
                     _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model, api_key=the_api_key)
                 log_file.write_text(buf.getvalue())
+                _maybe_persist_latest_to_db()
                 done_file.write_text("done")
             except Exception as exc:
                 import traceback
@@ -695,10 +773,43 @@ elif page == ":material/play_circle: Run Benchmark":
 elif page == ":material/bar_chart: Results":
     st.title("Benchmark Results")
 
-    raw, summary = load_results()
+    # ── Run history selector ───────────────────────────────────────────────
+    past_runs = db_list_runs()
 
-    if not summary:
+    # Auto-import flat JSON files if DB is empty
+    if not past_runs:
+        raw_json, summary_json = load_results()
+        if summary_json:
+            db_save_run(raw_json, summary_json, label="(imported)")
+            past_runs = db_list_runs()
+
+    if not past_runs:
         st.warning("No results yet. Run the benchmark first.")
+        st.stop()
+
+    run_options = {r["id"]: f"#{r['id']} · {r['run_at']} · {r['label']}" for r in past_runs}
+    if len(past_runs) > 1:
+        col_sel, col_del = st.columns([5, 1])
+        with col_sel:
+            selected_run_id = st.selectbox(
+                "Select a past run",
+                options=list(run_options.keys()),
+                format_func=lambda x: run_options[x],
+                key="selected_run_id",
+            )
+        with col_del:
+            st.write("")
+            if st.button("Delete run", icon=":material/delete:", key="del_run"):
+                db_delete_run(selected_run_id)
+                st.success("Run deleted.")
+                st.rerun()
+    else:
+        selected_run_id = past_runs[0]["id"]
+        st.caption(f"Last run: {past_runs[0]['run_at']} · {past_runs[0]['label']}")
+
+    raw, summary = db_load_run(selected_run_id)
+    if not summary:
+        st.warning("No results found for this run.")
         st.stop()
 
     df_summary = pd.DataFrame(summary)
