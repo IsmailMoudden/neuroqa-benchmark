@@ -659,14 +659,14 @@ elif page == ":material/play_circle: Run Benchmark":
     api_key_source = "not found"
     try:
         if "OPENROUTER_API_KEY" in st.secrets:
-            api_key = st.secrets["OPENROUTER_API_KEY"]
+            api_key = str(st.secrets["OPENROUTER_API_KEY"]).replace(" ", "").replace("\n", "").strip()
             api_key_source = "st.secrets"
     except Exception:
         pass
     if not api_key and env_path.exists():
         for line in env_path.read_text().splitlines():
             if line.startswith("OPENROUTER_API_KEY"):
-                api_key = line.split("=", 1)[-1].strip().strip('"').strip("'")
+                api_key = line.split("=", 1)[-1].strip().strip('"').strip("'").replace(" ", "")
                 api_key_source = ".env file"
                 break
 
