@@ -208,9 +208,10 @@ def generate_answer(
             tokens_out = usage.get("completion_tokens", 0)
             return answer, tokens_in, tokens_out
         except Exception as e:
+            wait = 15 if "429" in str(e) else 2 ** attempt
             if attempt < 2:
-                print(f"  [generate] retry {attempt+1}: {type(e).__name__}: {e}")
-                time.sleep(2 ** attempt)
+                print(f"  [generate] retry {attempt+1} (wait {wait}s): {type(e).__name__}: {e}")
+                time.sleep(wait)
             else:
                 print(f"  [generate] FAILED after 3 attempts: {type(e).__name__}: {e}")
                 raise
@@ -269,16 +270,9 @@ def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransforme
             retrieved = retrieve_top_k(q["question"], chunks, chunk_embeddings, embed_model, k=TOP_K)
             context_text = "\n\n".join(c["text"] for c in retrieved)
 
-            # Run answer + faithfulness + relevance in parallel
-            with ThreadPoolExecutor(max_workers=3) as ex:
-                f_answer = ex.submit(generate_answer, api_key, q["question"], retrieved)
-            answer, tok_in, tok_out = f_answer.result()
-
-            with ThreadPoolExecutor(max_workers=2) as ex:
-                f_faith = ex.submit(faithfulness_score, api_key, context_text, answer)
-                f_rel   = ex.submit(relevance_score,   api_key, q["question"], answer)
-                faith = f_faith.result()
-                rel   = f_rel.result()
+            answer, tok_in, tok_out = generate_answer(api_key, q["question"], retrieved)
+            faith = faithfulness_score(api_key, context_text, answer)
+            rel   = relevance_score(api_key, q["question"], answer)
 
             rec5    = recall_at_k(chunks, retrieved, q, k=TOP_K)
             mrr_val = mrr(retrieved, q)
@@ -307,11 +301,9 @@ def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransforme
                 "cost_usd": cost,
             }
 
-        # Evaluate all questions for this strategy in parallel
-        with ThreadPoolExecutor(max_workers=min(4, len(questions))) as ex:
-            futures = {ex.submit(_eval_question, q): q for q in questions}
-            for future in as_completed(futures):
-                all_results.append(future.result())
+        # Evaluate questions sequentially to avoid rate limits on free tier
+        for q in questions:
+            all_results.append(_eval_question(q))
 
     # ── Save raw results ──────────────────────────────────────────────────────
     raw_path = RESULTS_DIR / "raw_results.json"

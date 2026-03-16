@@ -119,8 +119,9 @@ def _call_judge(api_key: str, prompt: str, retries: int = 3) -> Optional[Dict]:
             if m:
                 return json.loads(m.group())
         except Exception as e:
+            wait = 15 if "429" in str(e) else 2 ** attempt
             if attempt < retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(wait)
             else:
                 print(f"  [judge] FAILED after {retries} attempts: {type(e).__name__}: {e}")
     return None
