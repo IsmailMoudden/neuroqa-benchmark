@@ -734,7 +734,9 @@ elif page == ":material/play_circle: Run Benchmark":
         # so it doesn't need to download inside the background thread
         _embed_model = get_embed_model()
 
-        def _run_thread(active_strategies, embed_model, the_api_key, log_file, done_file, err_file):
+        _questions = list(st.session_state.questions)
+
+        def _run_thread(active_strategies, embed_model, the_api_key, the_questions, log_file, done_file, err_file):
             import io, contextlib
             buf = io.StringIO()
             # Diagnostic header
@@ -742,11 +744,11 @@ elif page == ":material/play_circle: Run Benchmark":
             buf.write(f"=== Benchmark started ===\n")
             buf.write(f"API key: {key_preview}\n")
             buf.write(f"Strategies: {[s['id'] for s in active_strategies]}\n")
-            buf.write(f"Questions: {len(_rb.QA_DATASET)}\n\n")
+            buf.write(f"Questions: {len(the_questions)}\n\n")
             log_file.write_text(buf.getvalue())
             try:
                 with contextlib.redirect_stdout(buf):
-                    _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model, api_key=the_api_key)
+                    _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model, api_key=the_api_key, questions=the_questions)
                 log_file.write_text(buf.getvalue())
                 _maybe_persist_latest_to_db()
                 done_file.write_text("done")
@@ -757,7 +759,7 @@ elif page == ":material/play_circle: Run Benchmark":
 
         t = threading.Thread(
             target=_run_thread,
-            args=(_active, _embed_model, api_key, LOG_FILE, DONE_FILE, ERR_FILE),
+            args=(_active, _embed_model, api_key, _questions, LOG_FILE, DONE_FILE, ERR_FILE),
             daemon=True,
         )
         t.start()

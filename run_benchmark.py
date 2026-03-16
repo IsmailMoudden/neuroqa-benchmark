@@ -194,13 +194,17 @@ def generate_answer(
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransformer = None, api_key: str = None):
+def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransformer = None, api_key: str = None, questions: List[Dict] = None):
     if strategies is None:
         strategies = STRATEGIES
     if api_key is None:
         api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY not set. Add it to .env")
+    if questions is None:
+        questions = QA_DATASET
+    if not questions:
+        raise ValueError("No questions to evaluate. Add questions in the Questions page.")
 
     client = OpenAI(
         api_key=api_key,
@@ -285,8 +289,8 @@ def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransforme
             }
 
         # Evaluate all questions for this strategy in parallel
-        with ThreadPoolExecutor(max_workers=min(4, len(QA_DATASET))) as ex:
-            futures = {ex.submit(_eval_question, q): q for q in QA_DATASET}
+        with ThreadPoolExecutor(max_workers=min(4, len(questions))) as ex:
+            futures = {ex.submit(_eval_question, q): q for q in questions}
             for future in as_completed(futures):
                 all_results.append(future.result())
 
