@@ -106,9 +106,7 @@ def render():
                     os.environ["AZURE_API_ENDPOINT"] = v
 
     if not api_key:
-        st.warning("No API key found. Add `AZURE_API_KEY` to Streamlit secrets (cloud) or a `.env` file (local).", icon=":material/warning:")
-    else:
-        st.caption(f":material/key: Azure API key loaded from **{api_key_source}** — `{api_key[:12]}...`")
+        st.warning("No API key found. Add `AZURE_API_KEY` to Streamlit secrets (cloud)", icon=":material/warning:")
 
     st.markdown("### Chunking strategies to run")
     st.caption("Select at least one. Running fewer strategies is faster.")
