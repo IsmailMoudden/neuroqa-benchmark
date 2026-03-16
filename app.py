@@ -649,12 +649,12 @@ elif page == ":material/play_circle: Run Benchmark":
         # so it doesn't need to download inside the background thread
         _embed_model = get_embed_model()
 
-        def _run_thread(active_strategies, embed_model, log_file, done_file, err_file):
+        def _run_thread(active_strategies, embed_model, the_api_key, log_file, done_file, err_file):
             import io, contextlib
             buf = io.StringIO()
             try:
                 with contextlib.redirect_stdout(buf):
-                    _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model)
+                    _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model, api_key=the_api_key)
                 log_file.write_text(buf.getvalue())
                 done_file.write_text("done")
             except Exception as exc:
@@ -664,7 +664,7 @@ elif page == ":material/play_circle: Run Benchmark":
 
         t = threading.Thread(
             target=_run_thread,
-            args=(_active, _embed_model, LOG_FILE, DONE_FILE, ERR_FILE),
+            args=(_active, _embed_model, api_key, LOG_FILE, DONE_FILE, ERR_FILE),
             daemon=True,
         )
         t.start()
@@ -833,9 +833,17 @@ elif page == ":material/bar_chart: Results":
                 # Retrieved chunks
                 chunks = row.get("retrieved_chunks", [])
                 if chunks:
-                    st.markdown(f"**Retrieved chunks** ({len(chunks)} passages used to answer):")
-                    for c in chunks:
-                        st.caption(f"• {c}")
+                    st.markdown(f"**Retrieved passages** ({len(chunks)} used to generate the answer):")
+                    for idx_c, c in enumerate(chunks, 1):
+                        # Support both old format (string id) and new format (dict with text)
+                        if isinstance(c, dict):
+                            chunk_id = c.get("id", "")
+                            chunk_text = c.get("text", "")
+                        else:
+                            chunk_id = c
+                            chunk_text = ""
+                        with st.expander(f"Passage {idx_c} — {chunk_id}"):
+                            st.write(chunk_text or "_(text not available — re-run benchmark to populate)_")
 
         # Heatmap only when multiple questions AND strategies
         if n_strategies > 1 and n_questions > 1:

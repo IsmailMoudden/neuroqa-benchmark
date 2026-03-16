@@ -194,10 +194,11 @@ def generate_answer(
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransformer = None):
+def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransformer = None, api_key: str = None):
     if strategies is None:
         strategies = STRATEGIES
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    if api_key is None:
+        api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY not set. Add it to .env")
 
@@ -272,7 +273,7 @@ def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransforme
                 "source_doc": q["source_doc"],
                 "answer": answer,
                 "expected": q.get("expected", ""),
-                "retrieved_chunks": [c["chunk_id"] for c in retrieved],
+                "retrieved_chunks": [{"id": c["chunk_id"], "text": c["text"]} for c in retrieved],
                 "recall_at_5": rec5,
                 "mrr": mrr_val,
                 "f1": f1,
