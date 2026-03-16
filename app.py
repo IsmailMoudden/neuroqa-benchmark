@@ -257,10 +257,8 @@ TYPE_LABELS = {
 # ─── Session state ────────────────────────────────────────────────────────────
 if "questions" not in st.session_state:
     st.session_state.questions = load_questions()
-if "benchmark_running" not in st.session_state:
-    st.session_state.benchmark_running = False
-if "benchmark_log" not in st.session_state:
-    st.session_state.benchmark_log = ""
+if "benchmark_pid" not in st.session_state:
+    st.session_state.benchmark_pid = None
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -284,6 +282,7 @@ page = st.sidebar.radio(
 st.sidebar.divider()
 active_count = len(st.session_state.questions)
 st.sidebar.caption(f"{active_count} active question{'s' if active_count != 1 else ''}")
+_is_running = st.session_state.benchmark_pid is not None
 st.sidebar.caption("Chunking strategy evaluation interface.")
 
 
@@ -362,7 +361,7 @@ elif page == ":material/list_alt: Questions":
     with tab_active:
         col_add, col_reload, col_save, _ = st.columns([1, 1, 1, 4])
         with col_add:
-            if st.button("Add blank question", icon=":material/add:", use_container_width=True):
+            if st.button("Add blank question", icon=":material/add:", width="stretch"):
                 new_id = f"Q{len(st.session_state.questions)+1:02d}"
                 st.session_state.questions.append({
                     "id": new_id,
@@ -374,11 +373,11 @@ elif page == ":material/list_alt: Questions":
                     "keywords": [],
                 })
         with col_reload:
-            if st.button("Reload from file", icon=":material/refresh:", use_container_width=True):
+            if st.button("Reload from file", icon=":material/refresh:", width="stretch"):
                 st.session_state.questions = load_questions()
                 st.success("Reloaded from qa_dataset.py")
         with col_save:
-            if st.button("Save to file", icon=":material/save:", use_container_width=True, type="primary"):
+            if st.button("Save to file", icon=":material/save:", width="stretch", type="primary"):
                 save_questions(st.session_state.questions)
                 st.success("Saved to qa_dataset.py")
 
@@ -473,7 +472,7 @@ elif page == ":material/list_alt: Questions":
 
         if st.session_state.questions:
             st.divider()
-            if st.button("Save all changes", icon=":material/save:", type="primary", use_container_width=True):
+            if st.button("Save all changes", icon=":material/save:", type="primary", width="stretch"):
                 save_questions(st.session_state.questions)
                 st.success("All changes saved to qa_dataset.py")
 
@@ -604,55 +603,58 @@ elif page == ":material/play_circle: Run Benchmark":
     st.markdown(f"**{len(st.session_state.questions)} active question(s)** · **{len(selected_strategies)} strategy/ies** selected")
     st.divider()
 
+    LOG_FILE  = HERE / "results" / "_benchmark_log.txt"
+    DONE_FILE = HERE / "results" / "_benchmark_done.txt"
+
+    # Check if a previously launched process has finished
+    if st.session_state.benchmark_pid is not None:
+        import os as _os
+        try:
+            _os.kill(st.session_state.benchmark_pid, 0)  # 0 = just check existence
+            _still_running = True
+        except OSError:
+            _still_running = False
+        if not _still_running or DONE_FILE.exists():
+            st.session_state.benchmark_pid = None
+
+    _is_running = st.session_state.benchmark_pid is not None
+
     run_btn = st.button(
         "Start benchmark",
         icon=":material/play_arrow:",
         type="primary",
-        disabled=st.session_state.benchmark_running or not selected_strategies,
+        disabled=_is_running or not selected_strategies,
     )
 
-    LOG_FILE = HERE / "results" / "_benchmark_log.txt"
-    DONE_FILE = HERE / "results" / "_benchmark_done.txt"
-
     if run_btn:
-        st.session_state.benchmark_running = True
-        LOG_FILE.write_text("")
+        LOG_FILE.write_text("Benchmark started...\n")
         DONE_FILE.unlink(missing_ok=True)
-
-        def _run():
-            cmd = [sys.executable, "run_benchmark.py", "--strategies"] + selected_strategies
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(HERE),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            with LOG_FILE.open("a") as lf:
-                for line in proc.stdout:
-                    lf.write(line)
-                    lf.flush()
-            proc.wait()
-            DONE_FILE.write_text("done")
-
-        threading.Thread(target=_run, daemon=True).start()
+        cmd = [sys.executable, "-u", "run_benchmark.py", "--strategies"] + selected_strategies
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(HERE),
+            stdout=LOG_FILE.open("w"),
+            stderr=subprocess.STDOUT,
+        )
+        st.session_state.benchmark_pid = proc.pid
         st.rerun()
 
-    if st.session_state.benchmark_running:
-        done = DONE_FILE.exists()
+    if _is_running:
         log_text = LOG_FILE.read_text() if LOG_FILE.exists() else "Starting…"
-        if done:
-            st.session_state.benchmark_running = False
-            st.success("Benchmark complete. Go to the Results page to explore the output.")
-            st.code(log_text, language="")
-        else:
-            st.warning("Benchmark is running — click Refresh to see latest output.")
-            st.code(log_text or "Starting…", language="")
-            if st.button("Refresh log", icon=":material/refresh:"):
-                st.rerun()
+        st.warning("Benchmark is running…")
+        st.code(log_text or "Starting…", language="")
+        if st.button("Refresh log", icon=":material/refresh:"):
+            st.rerun()
+
     elif DONE_FILE.exists():
         log_text = LOG_FILE.read_text() if LOG_FILE.exists() else ""
         st.success("Benchmark complete. Go to the Results page to explore the output.")
+        st.code(log_text, language="")
+
+    elif LOG_FILE.exists() and LOG_FILE.stat().st_size > 0 and not DONE_FILE.exists():
+        # Process died without writing done file (error)
+        log_text = LOG_FILE.read_text()
+        st.error("Benchmark ended with an error. See log below.")
         st.code(log_text, language="")
 
 

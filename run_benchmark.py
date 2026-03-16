@@ -333,6 +333,9 @@ def run_benchmark(strategies: List[Dict] = None):
     export_excel(all_results, summary, xlsx_path)
     print(f"Excel       → {xlsx_path}")
 
+    # ── Signal completion to UI ───────────────────────────────────────────────
+    (RESULTS_DIR / "_benchmark_done.txt").write_text("done")
+
     # ── Print final table ─────────────────────────────────────────────────────
     best_sid = max(summary, key=lambda x: x["composite_score"])["strategy_id"]
     print("\n" + "="*95)
