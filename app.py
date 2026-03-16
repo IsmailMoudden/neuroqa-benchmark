@@ -571,11 +571,20 @@ elif page == ":material/play_circle: Run Benchmark":
         )
         st.stop()
 
+    # Resolve API key: st.secrets (Streamlit Cloud) > .env (local)
     env_path = HERE / ".env"
-    api_key_present = env_path.exists() and "OPENROUTER_API_KEY" in env_path.read_text()
-    if not api_key_present:
+    api_key = None
+    if "OPENROUTER_API_KEY" in st.secrets:
+        api_key = st.secrets["OPENROUTER_API_KEY"]
+    elif env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("OPENROUTER_API_KEY"):
+                api_key = line.split("=", 1)[-1].strip()
+                break
+
+    if not api_key:
         st.warning(
-            "No API key found in the `.env` file. Make sure `OPENROUTER_API_KEY` is set before running.",
+            "No API key found. Add `OPENROUTER_API_KEY` to Streamlit secrets (cloud) or a `.env` file (local).",
             icon=":material/warning:",
         )
 
@@ -630,11 +639,16 @@ elif page == ":material/play_circle: Run Benchmark":
         LOG_FILE.write_text("Benchmark started...\n")
         DONE_FILE.unlink(missing_ok=True)
         cmd = [sys.executable, "-u", "run_benchmark.py", "--strategies"] + selected_strategies
+        import os as _os
+        child_env = _os.environ.copy()
+        if api_key:
+            child_env["OPENROUTER_API_KEY"] = api_key
         proc = subprocess.Popen(
             cmd,
             cwd=str(HERE),
             stdout=LOG_FILE.open("w"),
             stderr=subprocess.STDOUT,
+            env=child_env,
         )
         st.session_state.benchmark_pid = proc.pid
         st.rerun()
