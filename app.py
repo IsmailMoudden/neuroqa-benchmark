@@ -177,6 +177,12 @@ def list_source_docs() -> list[str]:
     return sorted(f.name for f in SOURCES_DIR.iterdir() if f.suffix.lower() == ".docx")
 
 
+@st.cache_resource(show_spinner="Loading embedding model (first run only)…")
+def get_embed_model():
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+
 def load_questions() -> list[dict]:
     ns = {}
     exec(QA_PATH.read_text(encoding="utf-8"), ns)
@@ -639,21 +645,26 @@ elif page == ":material/play_circle: Run Benchmark":
 
         _active = [s for s in _ALL_STRATEGIES if s["id"] in selected_strategies]
 
-        def _run_thread(active_strategies, log_file, done_file, err_file):
+        # Pre-load (or retrieve from cache) the embed model in the main thread
+        # so it doesn't need to download inside the background thread
+        _embed_model = get_embed_model()
+
+        def _run_thread(active_strategies, embed_model, log_file, done_file, err_file):
             import io, contextlib
             buf = io.StringIO()
             try:
-                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-                    _rb.run_benchmark(strategies=active_strategies)
+                with contextlib.redirect_stdout(buf):
+                    _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model)
                 log_file.write_text(buf.getvalue())
                 done_file.write_text("done")
             except Exception as exc:
-                log_file.write_text(buf.getvalue() + f"\n\nERROR: {exc}")
+                import traceback
+                log_file.write_text(buf.getvalue() + f"\n\nERROR: {exc}\n{traceback.format_exc()}")
                 err_file.write_text(str(exc))
 
         t = threading.Thread(
             target=_run_thread,
-            args=(_active, LOG_FILE, DONE_FILE, ERR_FILE),
+            args=(_active, _embed_model, LOG_FILE, DONE_FILE, ERR_FILE),
             daemon=True,
         )
         t.start()

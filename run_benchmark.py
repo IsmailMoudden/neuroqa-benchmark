@@ -194,7 +194,7 @@ def generate_answer(
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def run_benchmark(strategies: List[Dict] = None):
+def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransformer = None):
     if strategies is None:
         strategies = STRATEGIES
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -206,12 +206,13 @@ def run_benchmark(strategies: List[Dict] = None):
         base_url="https://openrouter.ai/api/v1",
     )
 
-    # Cache embed model at module level — only loads once per process
-    global _EMBED_MODEL_CACHE
-    if "_EMBED_MODEL_CACHE" not in globals() or _EMBED_MODEL_CACHE is None:
-        print(f"Loading embedding model {EMBED_MODEL_NAME}...")
-        _EMBED_MODEL_CACHE = SentenceTransformer(EMBED_MODEL_NAME)
-    embed_model = _EMBED_MODEL_CACHE
+    # Use passed-in model (cached by caller) or load fresh
+    if embed_model is None:
+        global _EMBED_MODEL_CACHE
+        if _EMBED_MODEL_CACHE is None:
+            print(f"Loading embedding model {EMBED_MODEL_NAME}...")
+            _EMBED_MODEL_CACHE = SentenceTransformer(EMBED_MODEL_NAME)
+        embed_model = _EMBED_MODEL_CACHE
     docs = load_all_docs()
 
     all_results: List[Dict] = []
