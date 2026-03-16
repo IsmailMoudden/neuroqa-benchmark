@@ -89,7 +89,7 @@ RELEVANCE_PROMPT = (
 )
 
 
-JUDGE_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+JUDGE_MODEL = "google/gemma-3-4b-it:free"
 
 
 def _call_judge(api_key: str, prompt: str, retries: int = 3) -> Optional[Dict]:
