@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import urllib.request
 import numpy as np
-from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 import openpyxl
 from openpyxl.styles import PatternFill, Font
@@ -163,25 +163,45 @@ def retrieve_top_k(
     return [chunks[i] for i in top_indices]
 
 
+def _openrouter_chat(api_key: str, messages: list, max_tokens: int = 512) -> dict:
+    """Direct HTTP call to OpenRouter — bypasses openai SDK auth issues."""
+    payload = json.dumps({
+        "model": LLM_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://neuroqa-benchmark.streamlit.app",
+            "X-Title": "NeuroQA Benchmark",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
 def generate_answer(
-    client: OpenAI,
+    api_key: str,
     question: str,
     context_chunks: List[Dict],
 ) -> tuple[str, int, int]:
     context = "\n\n---\n\n".join(c["text"] for c in context_chunks)
     prompt = ANSWER_PROMPT.format(context=context, question=question)
+    messages = [{"role": "user", "content": prompt}]
 
     for attempt in range(3):
         try:
-            resp = client.chat.completions.create(
-                model=LLM_MODEL,
-                max_tokens=512,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            answer = resp.choices[0].message.content.strip()
-            tokens_in = resp.usage.prompt_tokens
-            tokens_out = resp.usage.completion_tokens
+            data = _openrouter_chat(api_key, messages, max_tokens=512)
+            answer = data["choices"][0]["message"]["content"].strip()
+            usage = data.get("usage", {})
+            tokens_in = usage.get("prompt_tokens", 0)
+            tokens_out = usage.get("completion_tokens", 0)
             return answer, tokens_in, tokens_out
         except Exception as e:
             if attempt < 2:
@@ -189,7 +209,7 @@ def generate_answer(
                 time.sleep(2 ** attempt)
             else:
                 print(f"  [generate] FAILED after 3 attempts: {type(e).__name__}: {e}")
-                raise  # re-raise so the thread captures it
+                raise
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -206,15 +226,6 @@ def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransforme
     if not questions:
         raise ValueError("No questions to evaluate. Add questions in the Questions page.")
 
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://openrouter.ai/api/v1",
-        default_headers={
-            "Authorization": f"Bearer {api_key}",
-            "HTTP-Referer": "https://neuroqa-benchmark.streamlit.app",
-            "X-Title": "NeuroQA Benchmark",
-        },
-    )
 
     # Use passed-in model (cached by caller) or load fresh
     if embed_model is None:
@@ -256,13 +267,12 @@ def run_benchmark(strategies: List[Dict] = None, embed_model: SentenceTransforme
 
             # Run answer + faithfulness + relevance in parallel
             with ThreadPoolExecutor(max_workers=3) as ex:
-                f_answer = ex.submit(generate_answer, client, q["question"], retrieved)
-                # faithfulness and relevance need the answer first — fire after
+                f_answer = ex.submit(generate_answer, api_key, q["question"], retrieved)
             answer, tok_in, tok_out = f_answer.result()
 
             with ThreadPoolExecutor(max_workers=2) as ex:
-                f_faith = ex.submit(faithfulness_score, client, context_text, answer)
-                f_rel   = ex.submit(relevance_score,   client, q["question"], answer)
+                f_faith = ex.submit(faithfulness_score, api_key, context_text, answer)
+                f_rel   = ex.submit(relevance_score,   api_key, q["question"], answer)
                 faith = f_faith.result()
                 rel   = f_rel.result()
 

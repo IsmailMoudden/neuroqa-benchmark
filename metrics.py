@@ -5,10 +5,9 @@ Metric computation for the RAG benchmark.
 import re
 import json
 import time
+import urllib.request
 from collections import Counter
 from typing import List, Dict, Optional
-
-from openai import OpenAI
 
 
 # ─── Source doc normalisation ─────────────────────────────────────────────────
@@ -90,16 +89,32 @@ RELEVANCE_PROMPT = (
 )
 
 
-def _call_judge(client: OpenAI, prompt: str, retries: int = 3) -> Optional[Dict]:
+JUDGE_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+
+
+def _call_judge(api_key: str, prompt: str, retries: int = 3) -> Optional[Dict]:
+    payload = json.dumps({
+        "model": JUDGE_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 256,
+        "temperature": 0,
+    }).encode("utf-8")
     for attempt in range(retries):
         try:
-            resp = client.chat.completions.create(
-                model="meta-llama/llama-3.1-8b-instruct:free",
-                max_tokens=256,
-                temperature=0,
-                messages=[{"role": "user", "content": prompt}],
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://neuroqa-benchmark.streamlit.app",
+                    "X-Title": "NeuroQA Benchmark",
+                },
+                method="POST",
             )
-            raw = resp.choices[0].message.content.strip()
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            raw = data["choices"][0]["message"]["content"].strip()
             m = re.search(r"\{.*\}", raw, re.DOTALL)
             if m:
                 return json.loads(m.group())
@@ -111,17 +126,17 @@ def _call_judge(client: OpenAI, prompt: str, retries: int = 3) -> Optional[Dict]
     return None
 
 
-def faithfulness_score(client: OpenAI, context: str, answer: str) -> float:
+def faithfulness_score(api_key: str, context: str, answer: str) -> float:
     prompt = FAITHFULNESS_PROMPT.format(context=context[:3000], answer=answer)
-    result = _call_judge(client, prompt)
+    result = _call_judge(api_key, prompt)
     if result and "score" in result:
         return min(max(int(result["score"]), 0), 5) / 5.0
     return 0.0
 
 
-def relevance_score(client: OpenAI, question: str, answer: str) -> float:
+def relevance_score(api_key: str, question: str, answer: str) -> float:
     prompt = RELEVANCE_PROMPT.format(question=question, answer=answer)
-    result = _call_judge(client, prompt)
+    result = _call_judge(api_key, prompt)
     if result and "score" in result:
         return min(max(int(result["score"]), 0), 5) / 5.0
     return 0.0
