@@ -742,10 +742,25 @@ elif page == ":material/play_circle: Run Benchmark":
             # Diagnostic header
             key_preview = (the_api_key[:12] + "...") if the_api_key else "MISSING"
             buf.write(f"=== Benchmark started ===\n")
-            buf.write(f"API key: {key_preview}\n")
+            buf.write(f"API key length: {len(the_api_key) if the_api_key else 0}\n")
+            buf.write(f"API key repr: {repr(the_api_key[:20]) if the_api_key else 'None'}\n")
             buf.write(f"Strategies: {[s['id'] for s in active_strategies]}\n")
             buf.write(f"Questions: {len(the_questions)}\n\n")
             log_file.write_text(buf.getvalue())
+
+            # Quick connectivity test before running full benchmark
+            try:
+                import urllib.request
+                test_req = urllib.request.Request(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {the_api_key}"},
+                )
+                with urllib.request.urlopen(test_req, timeout=10) as r:
+                    buf.write(f"[auth-test] OK — status {r.status}\n\n")
+            except Exception as test_err:
+                buf.write(f"[auth-test] FAILED: {test_err}\n\n")
+            log_file.write_text(buf.getvalue())
+
             try:
                 with contextlib.redirect_stdout(buf):
                     _rb.run_benchmark(strategies=active_strategies, embed_model=embed_model, api_key=the_api_key, questions=the_questions)
