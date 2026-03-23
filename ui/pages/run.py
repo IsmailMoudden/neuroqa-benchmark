@@ -128,7 +128,6 @@ def render():
     _is_running = st.session_state.benchmark_pid is not None and not DONE_FILE.exists() and not ERR_FILE.exists()
 
     if st.button("Start benchmark", icon=":material/play_arrow:", type="primary", disabled=_is_running or not selected_strategies):
-        os.environ["OPENROUTER_API_KEY"] = api_key or ""
         LOG_FILE.write_text("Benchmark started...\n")
         DONE_FILE.unlink(missing_ok=True)
         ERR_FILE.unlink(missing_ok=True)
